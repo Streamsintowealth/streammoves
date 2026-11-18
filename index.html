@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#113d31" />
+  <meta name="description" content="Stream Moves — a private, browser-based investment research and decision journal." />
+  <title>Stream Moves | Investment Checklist Journal</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="masthead">
+      <div class="header-inner">
+        <div class="brand-bar">
+          <div class="brand-lockup">
+            <div class="brand-emblem" aria-hidden="true">
+              <svg viewBox="0 0 36 36" fill="none" role="presentation"><path d="M7 27V19M15 27V14M23 27V10" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/><path d="M9 10l6-4 7 3 7-5" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div>
+              <p class="brand-eyebrow">STREAMS INTO WEALTH</p>
+              <h1>Stream <span>Moves</span></h1>
+            </div>
+          </div>
+          <div class="header-actions">
+            <div class="private-label"><span class="private-dot"></span> PERSONAL JOURNAL</div>
+            <button class="header-btn" type="button" id="exportButton" title="Export all entries as a JSON backup">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/></svg> Export backup
+            </button>
+            <button class="header-btn subtle" type="button" id="importButton" title="Import a Stream Moves backup">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L8 8m4-4 4 4M4 17v3h16v-3"/></svg> Import
+            </button>
+            <input type="file" id="importFile" accept=".json,application/json" hidden />
+          </div>
+        </div>
+        <div class="hero-caption">
+          <div>
+            <p class="hero-kicker">YOUR INVESTMENT CHECKLIST JOURNAL</p>
+            <p class="hero-line">Collect evidence. Build conviction. Review your decisions.</p>
+          </div>
+          <p class="hero-side">Research first. Capital second.</p>
+        </div>
+        <nav class="strategy-tabs" id="strategyTabs" aria-label="Investment strategy">
+          <button class="strategy-tab active" type="button" data-strategy="swings" aria-pressed="true">
+            <span class="tab-icon" aria-hidden="true">↗</span><span>SWINGS</span><span class="tab-count" data-count="swings">0</span>
+          </button>
+          <button class="strategy-tab" type="button" data-strategy="leaps" aria-pressed="false">
+            <span class="tab-icon" aria-hidden="true">◈</span><span>LEAPS</span><span class="tab-count" data-count="leaps">0</span>
+          </button>
+          <button class="strategy-tab" type="button" data-strategy="long-term" aria-pressed="false">
+            <span class="tab-icon" aria-hidden="true">▥</span><span>LONG TERM</span><span class="tab-count" data-count="long-term">0</span>
+          </button>
+        </nav>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <div class="welcome-row">
+        <div>
+          <p class="section-overline" id="strategyEyebrow">SWING RESEARCH WORKSPACE</p>
+          <h2 id="workspaceHeading">Your Swing Journal</h2>
+          <p class="muted" id="workspaceDescription">Keep your market thesis, technical setup, and decisions together.</p>
+        </div>
+        <button type="button" class="btn btn-primary" id="newEntryButton"><span class="plus">+</span> New analysis</button>
+      </div>
+
+      <section class="stat-grid" id="statGrid" aria-label="Journal statistics">
+        <article class="stat-card"><span class="stat-label">Saved analyses</span><strong id="statEntries">0</strong><span class="stat-foot">In this strategy</span></article>
+        <article class="stat-card"><span class="stat-label">Checked evidence</span><strong id="statEvidence">0</strong><span class="stat-foot">Research items completed</span></article>
+        <article class="stat-card"><span class="stat-label">Research updates</span><strong id="statUpdates">0</strong><span class="stat-foot">Notes + saved snapshots</span></article>
+      </section>
+
+      <div class="view-switch-row">
+        <div class="view-switch" role="group" aria-label="Workspace view">
+          <button class="view-option active" type="button" data-view="journal" aria-pressed="true">Research journal</button>
+          <button class="view-option" type="button" data-view="history" aria-pressed="false">Analysis history</button>
+        </div>
+        <div class="save-status" id="saveStatus" aria-live="polite"><span class="status-indicator"></span> Saved in this browser</div>
+      </div>
+
+      <div class="journal-layout" id="journalView">
+        <aside class="entry-sidebar" aria-label="Saved investment analyses">
+          <div class="sidebar-title"><div><h3>My research</h3><p id="sidebarCount" class="muted small">0 analyses</p></div><button class="icon-button" id="sidebarAdd" type="button" title="Start another analysis" aria-label="Start new analysis">+</button></div>
+          <label class="search-box"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg><input type="search" id="entrySearch" placeholder="Search ticker or notes" autocomplete="off" aria-label="Search analyses" /></label>
+          <label class="visually-hidden" for="entryStatusFilter">Filter by analysis status</label>
+          <select id="entryStatusFilter" class="filter-select"><option value="all">All statuses</option><option value="Researching">Researching</option><option value="Watching">Watching</option><option value="Open">Open</option><option value="Closed">Closed</option><option value="Avoided">Avoided</option></select>
+          <div id="entryList" class="entry-list"></div>
+        </aside>
+        <section class="editor-panel" id="editorPanel" aria-label="Investment research editor"></section>
+      </div>
+
+      <section class="history-view hidden" id="historyView" aria-label="Analysis history">
+        <div class="history-heading"><div><p class="section-overline">RESEARCH ARCHIVE</p><h3>Analysis history</h3><p class="muted">Return to old theses, trade decisions, saved revisions, and lessons.</p></div></div>
+        <div class="history-controls">
+          <label class="search-box"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg><input id="historySearch" type="search" placeholder="Search all past analyses" aria-label="Search history"/></label>
+          <label class="visually-hidden" for="historyScope">Filter history by strategy</label>
+          <select id="historyScope" class="filter-select"><option value="all">All three strategies</option><option value="swings">Swings</option><option value="leaps">LEAPS</option><option value="long-term">Long term</option></select>
+          <label class="visually-hidden" for="historyStatus">Filter history by status</label>
+          <select id="historyStatus" class="filter-select"><option value="all">All statuses</option><option value="Researching">Researching</option><option value="Watching">Watching</option><option value="Open">Open</option><option value="Closed">Closed</option><option value="Avoided">Avoided</option></select>
+        </div>
+        <div id="historyResults" class="history-results"></div>
+      </section>
+      <footer class="footer-note"><span>STREAM MOVES <span class="footer-gold">/</span> STREAMS INTO WEALTH</span><span>Private browser storage · Export backups regularly · Not a brokerage or live-data feed</span></footer>
+    </main>
+  </div>
+
+  <dialog id="snapshotDialog" class="modal-dialog" aria-labelledby="snapshotModalTitle">
+    <div class="dialog-header"><div><p class="section-overline">PAST VERSION</p><h3 id="snapshotModalTitle">Saved analysis snapshot</h3></div><button type="button" class="icon-button dialog-close" data-dialog-close aria-label="Close dialog">×</button></div>
+    <div id="snapshotContent" class="snapshot-content"></div>
+    <div class="dialog-actions"><button type="button" class="btn btn-quiet" data-dialog-close>Close</button><button type="button" class="btn btn-primary" id="restoreSnapshotButton">Restore this version</button></div>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
