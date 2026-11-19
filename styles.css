@@ -3,3 +3,43 @@
 @media(max-width:740px){.header-inner,.main-content{padding-left:16px;padding-right:16px}.header-inner{padding-top:17px}.brand-bar{align-items:flex-start}.brand-emblem{width:44px;height:44px}.brand-emblem svg{width:30px}.brand-lockup{gap:10px}.brand-lockup h1{font-size:29px}.header-actions{flex-wrap:wrap;justify-content:flex-end;gap:5px}.header-btn{padding:8px 9px;font-size:0;gap:0}.header-btn svg{width:17px;height:17px}.hero-caption{margin:17px 0}.hero-kicker{font-size:9px;letter-spacing:1.2px}.hero-line{font-size:12px}.hero-side{display:none}.strategy-tabs{gap:6px}.strategy-tab{min-height:47px;gap:5px;font-size:10px;letter-spacing:.5px;border-radius:8px}.tab-icon{font-size:16px}.tab-count{min-width:19px;height:19px;padding:0 4px;font-size:9px}.main-content{padding-top:20px}.welcome-row h2{font-size:22px}.welcome-row .muted{font-size:11px}.stat-grid{gap:8px}.stat-card{padding:13px 11px}.stat-label{font-size:9px;letter-spacing:.4px}.stat-card strong{font-size:24px}.stat-foot{font-size:9px}.view-switch-row{margin-top:18px}.journal-layout{grid-template-columns:1fr}.entry-sidebar{position:static;max-height:320px;min-height:0}.entry-list{max-height:175px}.editor-panel{padding:17px;min-height:350px}.editor-top{flex-direction:column}.editor-actions{justify-content:flex-start}.history-controls{grid-template-columns:1fr 1fr}.history-controls .search-box{grid-column:1/-1}.history-view{padding:16px}.history-item{align-items:flex-start}.history-actions{align-self:center}.save-status{font-size:10px}.welcome-row .btn{padding:10px;font-size:11px}}
 @media(max-width:480px){.brand-eyebrow{font-size:9px;letter-spacing:1.5px}.brand-lockup h1{font-size:25px}.strategy-tab{flex-direction:column;gap:3px;padding:7px 3px}.strategy-tab .tab-icon{display:none}.tab-count{position:absolute;opacity:0;pointer-events:none}.welcome-row{align-items:start}.welcome-row .btn{padding:9px 10px}.form-grid,.form-grid.three{grid-template-columns:1fr}.evidence-checks{grid-template-columns:1fr}.data-row{grid-template-columns:1fr 1fr 30px}.data-row .source-input{grid-column:1/3;grid-row:2}.data-row .remove-row{grid-column:3;grid-row:1/3;height:100%}.assessment-line{align-items:flex-start;flex-direction:column}.assessment-buttons{width:100%}.assessment-btn{flex:1}.stage-card summary{padding:12px;gap:7px}.stage-index{width:26px;height:26px}.stage-title-wrap strong{font-size:12px}.stage-tag{font-size:9px;padding:4px}.stage-arrow{display:none}.history-item{flex-direction:column}.history-actions{align-self:flex-start}.save-status{font-size:0}.save-status .status-indicator{width:8px;height:8px}.note-submit{align-items:flex-start;flex-direction:column}.footer-note{font-size:9px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;scroll-behavior:auto!important}}
+
+/* Investment meters and public company-quote lookup — shared across all three strategies. */
+.market-lookup{margin-top:14px;padding:14px;border:1px solid #d7e5d9;border-radius:11px;background:linear-gradient(145deg,#f9fcf9,#fffef9)}
+.market-lookup-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.market-lookup-top strong{font-size:12px;color:#284a37}
+.quote-result{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-top:10px;border-top:1px solid #e5ebdf;padding-top:12px}
+.quote-result strong{font-size:21px;color:#165341;display:block;letter-spacing:-.5px}
+.quote-result small{display:block;margin-top:4px;font-size:10px;color:#819288;line-height:1.5}
+.quote-result a{font-size:11px;font-weight:780;white-space:nowrap}
+.market-lookup-help{font-size:10px;color:#839384;line-height:1.55;margin:11px 0 0}
+.market-lookup-help.market-error{color:#a05448}
+.ticker-suggestions{display:grid;gap:3px;margin-top:10px;padding:5px;border:1px solid #cce0cf;border-radius:9px;background:#fff;max-height:245px;overflow:auto;box-shadow:0 9px 18px #132d1b14}
+.ticker-suggestions button{text-align:left;padding:9px;border:0;border-radius:6px;background:#fff;display:grid;grid-template-columns:70px minmax(0,1fr) auto;align-items:center;gap:9px;color:#244936;font-size:11px}
+.ticker-suggestions button:hover,.ticker-suggestions button:focus-visible{background:#eff7ef}
+.ticker-suggestions span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ticker-suggestions small{color:#95a295;font-size:10px}
+.signal-meter{background:#f8faf8;border:1px solid #e4ebe3;padding:12px;border-radius:10px;margin:9px 0}
+.signal-meter-head{display:flex;justify-content:space-between;gap:9px;align-items:center;flex-wrap:wrap}
+.signal-meter-head strong{font-size:12px;color:#335947}
+.signal-meter-head span{font-size:10px;color:#768c7c}
+.signal-track{position:relative;height:12px;border-radius:15px;margin:12px 0 5px;background:linear-gradient(90deg,#b86560 0%,#e9c4a0 32%,#e5d5a2 50%,#bad7b7 69%,#378058 100%);box-shadow:inset 0 1px 2px #00000012}
+.signal-track-pin{position:absolute;top:-5px;width:5px;height:22px;border-radius:3px;background:#173a2c;border:1px solid white;box-shadow:0 2px 4px #123e3044;transform:translateX(-50%)}
+.signal-meter.pending .signal-track-pin,.signal-meter.na .signal-track-pin{background:#8f9d92}
+.signal-endpoints{display:flex;justify-content:space-between;font-size:8px;font-weight:820;letter-spacing:.8px;color:#8a998d}
+.evidence-metrics{display:grid;gap:10px}
+.evidence-metric{border:1px solid #e2e9e2;border-radius:10px;padding:10px;background:#fff}
+.evidence-metric.active{background:#fbfdf9;border-color:#bad5c0}
+.evidence-metric .evidence-check{background:transparent;border:0;margin:0;padding:4px 0 10px;font-weight:750;color:#3a5a46}
+.evidence-metric .evidence-check.checked{background:transparent}
+.marker-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(155px,.8fr);gap:8px;margin-bottom:8px}
+.marker-fields label,.marker-reading-grid label{display:flex;flex-direction:column;gap:4px;color:#667d6c;font-size:10px;font-weight:730}
+.marker-fields input,.marker-fields select,.marker-reading-grid input{background:#fff;width:100%;min-width:0;border:1px solid #dfe8de;border-radius:7px;padding:8px 9px;font-size:11px;color:#294839}
+.marker-reading-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.marker-reading-grid input{font-variant-numeric:tabular-nums}
+.na-row{display:flex;align-items:center;gap:9px;margin:13px 0;padding:10px;border-radius:8px;background:#f0f4f6;font-size:11px;font-weight:700;color:#536b77}
+.na-row input{accent-color:#2b7255}
+#overallSignal{margin-top:13px}
+.stage-tag.pending{background:#f5f6f5;color:#8a978c;border-color:#e4ebe4}
+@media (max-width:740px){.ticker-suggestions button{grid-template-columns:60px minmax(0,1fr)}.ticker-suggestions small{grid-column:2}}
+@media (max-width:480px){.marker-fields{grid-template-columns:1fr}.marker-reading-grid{gap:5px}.marker-reading-grid input{padding:9px 5px;font-size:12px}.quote-result strong{font-size:20px}.signal-meter-head{align-items:start;flex-direction:column;gap:4px}}

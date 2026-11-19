@@ -1,5 +1,6 @@
-/* Stream Moves | personal, browser-only investment research journal.
-   No accounts, tracking, remote services, or market-data requests. */
+/* Stream Moves | personal, browser-saved investment research journal.
+   Only ticker/company searches and last-price requests are sent to an external market-data proxy.
+   All journal analysis remains in this browser unless exported by the user. */
 'use strict';
 
 const STORAGE_KEY = 'streammoves_journal_v1';
@@ -16,6 +17,50 @@ const STAGES = [
   { key: 'technical', name: 'Technical Confirmation', description: 'Look for a defined setup rather than a guess.', checks: ['Primary trend / market structure confirmed', '20 / 50 / 200-day moving averages checked', 'Supply / demand zones marked', 'Volume / candlestick behavior assessed', 'FVG / imbalance / liquidity reviewed', 'Entry, invalidation, risk/reward considered'] },
   { key: 'options', name: 'Options Activity & Positioning', description: 'Review what options markets may be pricing in.', checks: ['Open interest / volume checked', 'Implied volatility / IV rank reviewed', 'Calls vs puts / positioning examined', 'Expected move / key expirations checked', 'Greeks / spread liquidity reviewed'] }
 ];
+// Numeric markers are editable. Directions are transparent assumptions, not forecasts.
+// Five-step meters use three chronological readings and only checked, complete markers.
+const MARKER_DEFS = {
+  economic: [
+    ['Real GDP growth (%)','up'],['Core PCE inflation YoY (%)','down'],
+    ['Unemployment rate (%)','down'],['10Y minus 2Y Treasury spread (pp)','choose'],['ISM Manufacturing PMI','up']
+  ],
+  sector: [
+    ['Sector return vs S&P 500 (%)','up'],['Sector 1-month relative strength (%)','up'],
+    ['Sector price vs 50-day MA (%)','up'],['Sector breadth above 50-day MA (%)','up'],
+    ['Sector ETF net flows ($M)','up']
+  ],
+  fundamentals: [
+    ['Revenue growth YoY (%)','up'],['EPS growth YoY (%)','up'],
+    ['Free cash flow ($M)','up'],['Net debt / EBITDA','down'],['Return on invested capital (%)','up']
+  ],
+  technical: [
+    ['Price vs 20-day MA (%)','up'],['Price vs 50-day MA (%)','up'],
+    ['Price vs 200-day MA (%)','up'],['Price vs prior swing high (%)','up'],
+    ['Bullish-minus-bearish volume (%)','up'],['Potential reward / risk (multiple)','up']
+  ],
+  options: [
+    ['Call / put open-interest ratio','up'],['Implied volatility rank (%)','choose'],
+    ['Put / call volume ratio','down'],['Net bullish options premium ($M)','up'],
+    ['Options delta (signed)','choose']
+  ]
+};
+const MARKET_PROXY = 'https://proxy.cors.dev/';
+const quoteCache = new Map(), searchCache = new Map(), quoteAttempts = new Map();
+let quoteTimer=null, searchTimer=null, searchController=null, quoteController=null;
+let suggestions=[], suggestionEntryId=null;
+const marketUrl = url => MARKET_PROXY + url;
+const stockAnalysisUrl = (ticker, instrument='EQUITY') => {
+  const symbol=String(ticker||'').trim().toLowerCase();
+  if(!/^[a-z0-9-]{1,12}$/.test(symbol))return 'https://stockanalysis.com/';
+  return 'https://stockanalysis.com/'+(instrument==='ETF'?'etf/':'stocks/')+symbol+'/';
+};
+const isTicker = value => /^[A-Za-z^][A-Za-z0-9.\-=^]{0,14}$/.test(String(value||'').trim());
+const amountText = (price, currency='USD') => {
+  if(!Number.isFinite(Number(price)))return 'Unavailable';
+  try{return new Intl.NumberFormat(undefined,{style:'currency',currency:currency||'USD',maximumFractionDigits:2}).format(Number(price));}
+  catch{return Number(price).toFixed(2)+' '+currency;}
+};
+
 const STATUSES = ['Researching', 'Watching', 'Open', 'Closed', 'Avoided'];
 const DECISIONS = ['Undecided', 'Buy', 'Hold', 'Wait', 'Avoid', 'Sell'];
 const RATINGS = ['bullish', 'neutral', 'bearish'];
@@ -32,19 +77,21 @@ const validDate = (s) => typeof s === 'string' && !Number.isNaN(Date.parse(s));
 const deepCopy = (x) => JSON.parse(JSON.stringify(x));
 const optionMarkup = (items, selected) => items.map(x => `<option value="${esc(x)}" ${selected === x ? 'selected' : ''}>${esc(x)}</option>`).join('');
 
-function emptyStage(s) {return {rating:'',checks:s.checks.map(()=>false),notes:'',data:[]};}
+function emptyStage(s) {return {rating:'',checks:s.checks.map(()=>false),markers:MARKER_DEFS[s.key].map(([name,direction])=>({name,direction,readings:['','','']})),notes:'',data:[]};}
 function createEntry(strategy='swings') {
   const stamp=isoNow();
   return {id:makeId(),strategy,ticker:'',company:'',setup:'',status:'Researching',decision:'Undecided',thesis:'',invalidationReason:'',lesson:'',
     direction:'Long',timeframe:'Daily',entryPrice:'',targetPrice:'',stopPrice:'',exitPrice:'',capital:'',quantity:'',exitPremium:'',openedDate:'',closedDate:'',
     optionType:'Call',expiration:'',strike:'',premium:'',contracts:'',delta:'',ivRank:'',reviewDate:'',allocation:'',
+    lastPrice:null,lastPriceCurrency:'USD',lastPriceAt:'',lastPriceSymbol:'',instrumentType:'EQUITY',
     stages:Object.fromEntries(STAGES.map(s=>[s.key,emptyStage(s)])),logs:[],snapshots:[],createdAt:stamp,updatedAt:stamp};
 }
 function normalizeCore(raw) {
   if(!raw || typeof raw!=='object' || Array.isArray(raw)) throw Error('Invalid analysis entry');
   const e=createEntry(Object.hasOwn(STRATEGIES,raw.strategy)?raw.strategy:'swings');
   e.id=plain(raw.id,128)||makeId();
-  for(const k of ['ticker','company','setup','thesis','invalidationReason','lesson','entryPrice','targetPrice','stopPrice','exitPrice','capital','quantity','exitPremium','openedDate','closedDate','expiration','strike','premium','contracts','delta','ivRank','reviewDate','allocation']) e[k]=plain(raw[k]);
+  for(const k of ['ticker','company','setup','thesis','invalidationReason','lesson','entryPrice','targetPrice','stopPrice','exitPrice','capital','quantity','exitPremium','openedDate','closedDate','expiration','strike','premium','contracts','delta','ivRank','reviewDate','allocation','lastPriceCurrency','lastPriceAt','lastPriceSymbol','instrumentType']) e[k]=plain(raw[k]);
+  e.lastPrice=raw.lastPrice!==null&&Number.isFinite(Number(raw.lastPrice))&&Number(raw.lastPrice)>0?Number(raw.lastPrice):null;
   e.status=STATUSES.includes(raw.status)?raw.status:'Researching';
   e.decision=DECISIONS.includes(raw.decision)?raw.decision:'Undecided';
   e.direction=['Long','Short'].includes(raw.direction)?raw.direction:'Long';
@@ -59,8 +106,10 @@ function normalizeCore(raw) {
     st.rating=[...RATINGS,'na'].includes(a.rating)?a.rating:'';
     st.notes=plain(a.notes,30000);
     st.checks=s.checks.map((_,i)=>a.checks?.[i]===true);
+    st.markers=st.markers.map((m,i)=>{const source=a.markers?.[i]||{};return {name:plain(source.name,120)||m.name,direction:['up','down','choose'].includes(source.direction)?source.direction:m.direction,readings:[0,1,2].map(j=>plain(source.readings?.[j],45))};});
     st.data=Array.isArray(a.data)?a.data.slice(0,500).map(d=>({id:plain(d?.id,128)||makeId(),metric:plain(d?.metric,1000),value:plain(d?.value,2000),source:plain(d?.source,2500),recordedAt:validDate(d?.recordedAt)?d.recordedAt:isoNow()})):[];
   }
+  for(const st of STAGES){const v=e.stages[st.key];if(v.rating!=='na')v.rating=stageSignal(e,st.key).rating;}
   return e;
 }
 function normalizeEntry(raw) {
@@ -93,9 +142,69 @@ function autosave(){
 }
 function showToast(message,error=false){const el=$('toast');el.textContent=message;el.className=`toast visible${error?' error':''}`;clearTimeout(app.toastTimer);app.toastTimer=setTimeout(()=>el.classList.remove('visible'),3200);}
 function current(){return app.entries.find(e=>e.id===app.selectedId&&e.strategy===app.strategy)||null;}
+// An explicitly directional, equal-weight trend score. A move is not a probability.
+function numericReadings(m){
+  if(!m || m.direction==='choose' || !Array.isArray(m.readings) || m.readings.length!==3)return null;
+  const values=m.readings.map(x=>String(x).trim());
+  if(values.some(x=>!x || !/^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(x)))return null;
+  const numbers=values.map(Number);
+  return numbers.every(Number.isFinite)?numbers:null;
+}
+function markerSignal(m){
+  const n=numericReadings(m);if(!n)return null;
+  const sign=x=>x>1e-10?1:x< -1e-10?-1:0;
+  const direction=m.direction==='down'?-1:1;
+  // 50% oldest-to-latest trend, 25% each consecutive period.
+  return direction*(0.5*sign(n[2]-n[0])+0.25*sign(n[1]-n[0])+0.25*sign(n[2]-n[1]));
+}
+function stageSignal(entry,key){
+  const st=entry.stages[key];
+  if(st.rating==='na')return {rating:'na',score:0,ready:0,included:0,pending:0};
+  let sum=0,ready=0,included=0,pending=0;
+  st.checks.forEach((checked,i)=>{
+    if(!checked)return;
+    included++;
+    const signal=markerSignal(st.markers[i]);
+    if(signal===null)pending++;else{sum+=signal;ready++;}
+  });
+  if(ready<3)return {rating:'',score:ready?sum/ready:0,ready,included,pending};
+  const score=sum/ready;
+  return {rating:score>=0.25?'bullish':score<=-0.25?'bearish':'neutral',score,ready,included,pending};
+}
+function syncStageRating(entry,key){
+  const st=entry.stages[key];if(st.rating!=='na')st.rating=stageSignal(entry,key).rating;
+}
+function allSignals(entry){
+  const stages=STAGES.map(x=>stageSignal(entry,x.key)).filter(s=>s.rating!=='na');
+  const ready=stages.filter(x=>x.rating).length;
+  const score=ready?stages.filter(x=>x.rating).reduce((a,x)=>a+x.score,0)/ready:0;
+  const enough=ready===stages.length && ready>0;
+  return {score,ready,needed:stages.length,rating:enough?(score>=0.25?'bullish':score<=-0.25?'bearish':'neutral'):''};
+}
+function meterMarkup(signal,overview=false){
+  const pct=Math.max(3,Math.min(97,50+50*signal.score));
+  const label=signal.rating==='na'?'Not applicable':signal.rating?signal.rating[0].toUpperCase()+signal.rating.slice(1):'Insufficient data';
+  const detail=overview?`${signal.ready}/${signal.needed} stages scored`:`${signal.ready} complete indicators${signal.pending?` · ${signal.pending} checked but incomplete`:''} · min. 3 required`;
+  return `<div class="signal-meter ${esc(signal.rating||'pending')}"><div class="signal-meter-head"><strong>${overview?'Overall evidence meter':'Data-derived thesis'}: ${esc(label)}</strong><span>${esc(detail)}</span></div><div class="signal-track"><div class="signal-track-pin" style="left:${pct}%" aria-hidden="true"></div></div><div class="signal-endpoints"><span>BEARISH</span><span>NEUTRAL</span><span>BULLISH</span></div></div>`;
+}
+function redrawMeters(){
+  const e=current();if(!e)return;
+  for(const s of STAGES){
+    const signal=stageSignal(e,s.key),el=$('meter-'+s.key),card=document.querySelector(`[data-stage="${s.key}"]`);
+    if(el)el.innerHTML=meterMarkup(signal);
+    const tag=card?.querySelector('.stage-tag');
+    if(tag){tag.className='stage-tag '+(signal.rating||'pending');tag.textContent=signal.rating==='na'?'N/A':signal.rating?signal.rating[0].toUpperCase()+signal.rating.slice(1):'Needs readings';}
+    const small=card?.querySelector('.stage-title-wrap small');
+    if(small)small.textContent=`${e.stages[s.key].checks.filter(Boolean).length}/${s.checks.length} checked · ${signal.ready} complete readings`;
+  }
+  const overall=$('overallSignal');if(overall)overall.innerHTML=meterMarkup(allSignals(e),true);
+  const m=metrics(e),progress=$('progressNote');
+  if(progress)progress.textContent=`${m.done} of ${m.total} prompts checked · ${m.rated} of ${STAGES.length-(e.stages.options.rating==='na'?1:0)} stages scored. Completion is not a buy signal.`;
+}
+
 function metrics(e){
   let done=0,total=0,rated=0;
-  for(const s of STAGES){const st=e.stages[s.key];if(st.rating==='na')continue;done+=st.checks.filter(Boolean).length;total+=st.checks.length;if(st.rating)rated++;}
+  for(const s of STAGES){const st=e.stages[s.key];if(st.rating==='na')continue;done+=st.checks.filter(Boolean).length;total+=st.checks.length;if(stageSignal(e,s.key).rating)rated++;}
   return {done,total,rated,pct:total?Math.round(done/total*100):0};
 }
 function refreshSummary(){
@@ -150,16 +259,27 @@ function textArea(label,name,value,placeholder=''){
   return `<div class="field full"><label for="field-${name}">${esc(label)}</label><textarea data-field="${name}" id="field-${name}" placeholder="${esc(placeholder)}" rows="4">${esc(value)}</textarea></div>`;
 }
 function stageMarkup(e,s,i,open){
-  const st=e.stages[s.key],checked=st.checks.filter(Boolean).length;
-  const label=st.rating==='na'?'N/A':st.rating?(st.rating[0].toUpperCase()+st.rating.slice(1)):'Not assessed';
-  const disabled=st.rating==='na';
-  const ratings=[...RATINGS,...(s.key==='options'&&e.strategy==='long-term'?['na']:[])];
+  const st=e.stages[s.key],checked=st.checks.filter(Boolean).length,signal=stageSignal(e,s.key);
+  const label=signal.rating==='na'?'N/A':signal.rating?(signal.rating[0].toUpperCase()+signal.rating.slice(1)):'Needs readings';
   return `<details class="stage-card" data-stage="${s.key}" ${open?'open':''}>
-    <summary><span class="stage-index">0${i+1}</span><span class="stage-title-wrap"><strong>${esc(s.name)}</strong><small>${checked}/${s.checks.length} evidence prompts checked</small></span><span class="stage-side"><span class="stage-tag ${esc(st.rating)}">${esc(label)}</span><span class="stage-arrow" aria-hidden="true">⌄</span></span></summary>
+    <summary><span class="stage-index">0${i+1}</span><span class="stage-title-wrap"><strong>${esc(s.name)}</strong><small>${checked}/${s.checks.length} checked · ${signal.ready} complete readings</small></span><span class="stage-side"><span class="stage-tag ${esc(signal.rating||'pending')}">${esc(label)}</span><span class="stage-arrow" aria-hidden="true">⌄</span></span></summary>
     <div class="stage-body"><p class="stage-body-intro">${esc(s.description)}</p>
-      <div class="assessment-line"><span class="assessment-label">What does your research suggest?</span><div class="assessment-buttons" role="group" aria-label="${esc(s.name)} assessment">${ratings.map(r=>`<button type="button" class="assessment-btn ${r} ${st.rating===r?'selected':''}" data-rate-stage="${s.key}" data-rate="${r}" aria-pressed="${st.rating===r}">${r==='na'?'Not applicable':r[0].toUpperCase()+r.slice(1)}</button>`).join('')}</div></div>
-      ${disabled?`<p class="hint-text">Marked not applicable. The checklist stays available if you change the assessment.</p>`:''}
-      <p class="checklist-heading">Evidence checklist</p><div class="evidence-checks">${s.checks.map((c,j)=>`<label class="evidence-check ${st.checks[j]?'checked':''}"><input type="checkbox" data-check-stage="${s.key}" data-check-index="${j}" ${st.checks[j]?'checked':''}/><span>${esc(c)}</span></label>`).join('')}</div>
+      <div id="meter-${s.key}">${meterMarkup(signal)}</div>
+      <p class="hint-text">The meter uses checked markers only. Fill in all three numeric readings (oldest → latest), and choose which direction favors bullish. At least 3 complete markers are required. Trends are not forecasts.</p>
+      ${s.key==='options' && e.strategy==='long-term'?`<label class="na-row"><input type="checkbox" data-stage-na="options" ${st.rating==='na'?'checked':''}> Options not applicable to this long-term position</label>`:''}
+      <p class="checklist-heading">Evidence checklist + last three readings</p><div class="evidence-metrics">${s.checks.map((c,j)=>{
+        const m=st.markers[j],v=m.readings,score=st.checks[j]?markerSignal(m):null;
+        return `<div class="evidence-metric ${st.checks[j]?'active':''}" data-marker-card="${s.key}-${j}">
+        <label class="evidence-check ${st.checks[j]?'checked':''}"><input type="checkbox" data-check-stage="${s.key}" data-check-index="${j}" ${st.checks[j]?'checked':''}/><span>${esc(c)}</span></label>
+        <div class="marker-fields" data-marker-stage="${s.key}" data-marker-index="${j}">
+          <label class="marker-name-label">Indicator<input type="text" data-marker-input="name" value="${esc(m.name)}" maxlength="120" aria-label="Indicator name" /></label>
+          <label class="marker-direction-label">Bullish interpretation<select data-marker-input="direction" aria-label="Which direction favors bullish">
+            <option value="choose" ${m.direction==='choose'?'selected':''}>Choose direction</option><option value="up" ${m.direction==='up'?'selected':''}>Higher = bullish</option><option value="down" ${m.direction==='down'?'selected':''}>Lower = bullish</option>
+          </select></label>
+        </div>
+        <div class="marker-reading-grid" data-marker-stage="${s.key}" data-marker-index="${j}">${['Oldest','Middle','Latest'].map((x,k)=>`<label>${x}<input type="number" inputmode="decimal" step="any" data-marker-input="reading" data-reading-index="${k}" aria-label="${esc(m.name)} ${x.toLowerCase()} reading" value="${esc(v[k])}" placeholder="${k===0?'1st':k===1?'2nd':'3rd'}" /></label>`).join('')}</div>
+        </div>`;
+      }).join('')}</div>
       <div class="data-section"><div class="data-header"><span class="datapoints-heading">Research data &amp; sources</span><button type="button" class="btn btn-secondary small-btn" data-add-data="${s.key}">+ Add data point</button></div>
       ${st.data.length?st.data.map(d=>`<div class="data-row" data-data-id="${esc(d.id)}" data-data-stage="${s.key}"><input aria-label="Metric or evidence name" data-data-field="metric" type="text" value="${esc(d.metric)}" placeholder="Metric (e.g., CPI)" maxlength="1000"/><input aria-label="Observed value or finding" data-data-field="value" type="text" value="${esc(d.value)}" placeholder="Value / finding" maxlength="2000"/><input aria-label="Source URL" class="source-input" data-data-field="source" type="url" value="${esc(d.source)}" placeholder="https://source…" maxlength="2500"/><button class="remove-row" type="button" data-remove-data="${esc(d.id)}" data-remove-stage="${s.key}" aria-label="Remove this data point">×</button></div>${safeUrl(d.source)?`<div class="hint-text"><a href="${esc(safeUrl(d.source))}" target="_blank" rel="noopener noreferrer">Open source ↗</a> · added ${shortDate(d.recordedAt)}</div>`:''}`).join(''):`<div class="no-data">Add the exact values, findings, or source links you discover during research.</div>`}
       </div><div class="research-notes"><label for="notes-${s.key}">Analysis / conflicting evidence</label><textarea class="research-textarea" id="notes-${s.key}" data-notes-stage="${s.key}" rows="4" placeholder="What did you find? Why does it matter? What contradicts your thesis?">${esc(st.notes)}</textarea></div>
@@ -197,6 +317,102 @@ function extraFields(e){
   if(e.strategy==='leaps')return `<div class="form-grid three">${selectField('Option type','optionType',e.optionType,['Call','Put'])}${dateField('Expiration date','expiration',e.expiration)}${field('Strike price','strike',e.strike)}${field('Entry premium per share','premium',e.premium)}${field('Exit premium per share','exitPremium',e.exitPremium)}${field('Number of contracts','contracts',e.contracts)}${field('Delta','delta',e.delta)}${field('IV rank (%)','ivRank',e.ivRank)}</div><p class="hint-text">Record the actual contract, liquidity, and other Greeks in step 5. Options pricing cannot be inferred from the underlying share price alone.</p>`;
   return `<div class="form-grid">${field('Target portfolio allocation (%)','allocation',e.allocation)}${dateField('Next thesis review','reviewDate',e.reviewDate)}</div>`;
 }
+function quotePanelMarkup(e){
+  const symbol=e.ticker?.trim().toUpperCase(),valid=symbol&&isTicker(symbol),hasQuote=valid&&e.lastPriceSymbol===symbol&&Number.isFinite(e.lastPrice)&&e.lastPrice>0;
+  const quoteAt=hasQuote&&validDate(e.lastPriceAt)?dateLabel(e.lastPriceAt):'';
+  const stockUrl=valid?stockAnalysisUrl(symbol,e.instrumentType):'https://stockanalysis.com/';
+  return `<div class="market-lookup"><div class="market-lookup-top"><strong>Company lookup &amp; last reported stock price</strong><button class="btn btn-secondary small-btn" id="refreshQuoteButton" type="button" ${!valid?'disabled':''}>Refresh price</button></div>
+  <div id="tickerSuggestions" class="ticker-suggestions hidden" role="listbox" aria-label="Matching companies"></div>
+  <div class="quote-result" id="quoteResult"><div><strong>${hasQuote?esc(amountText(e.lastPrice,e.lastPriceCurrency)):valid?'Price not loaded':'Search a ticker or company name'}</strong><small>${hasQuote?`Last reported ${esc(quoteAt)} · ${esc(e.lastPriceCurrency||'USD')} · may be delayed`:valid?'Price updates on search or refresh':'Enter a company name or symbol above to see matches'}</small></div>
+  <a href="${esc(stockUrl)}" target="_blank" rel="noopener noreferrer">${valid?'StockAnalysis.com ↗':'Open StockAnalysis.com ↗'}</a></div><p class="market-lookup-help" id="marketLookupHelp">Prices are external, may be delayed, and can be unavailable. Your journal notes are never sent with requests.</p></div>`;
+}
+function updateQuotePanel(){
+  const e=current(),panel=$('quoteResult'),help=$('marketLookupHelp');if(!e||!panel)return;
+  const symbol=e.ticker.trim().toUpperCase(),valid=isTicker(symbol)&&!!symbol;
+  const hasQuote=valid&&e.lastPriceSymbol===symbol&&Number.isFinite(e.lastPrice)&&e.lastPrice>0;
+  panel.innerHTML=`<div><strong>${hasQuote?esc(amountText(e.lastPrice,e.lastPriceCurrency)):valid?'Price not loaded':'Search a ticker or company name'}</strong><small>${hasQuote?`Last reported ${esc(dateLabel(e.lastPriceAt))} · ${esc(e.lastPriceCurrency||'USD')} · may be delayed`:valid?'Fetching quote when available':'Enter a company name or symbol above to see matches'}</small></div><a href="${esc(valid?stockAnalysisUrl(symbol,e.instrumentType):'https://stockanalysis.com/')}" target="_blank" rel="noopener noreferrer">${valid?'StockAnalysis.com ↗':'Open StockAnalysis.com ↗'}</a>`;
+  const btn=$('refreshQuoteButton');if(btn)btn.disabled=!valid;
+  if(help && !help.dataset.error)help.textContent='Prices are external, may be delayed, and can be unavailable. Your journal notes are never sent with requests.';
+}
+function setLookupHelp(message,isError=false){const el=$('marketLookupHelp');if(el){el.textContent=message;el.dataset.error=isError?'true':'';el.classList.toggle('market-error',isError);}}
+function showSuggestions(results,eid){
+  if(!eid||eid!==current()?.id)return;
+  const el=$('tickerSuggestions');if(!el)return;
+  suggestions=results;suggestionEntryId=eid;
+  if(!results.length){el.classList.add('hidden');el.innerHTML='';return;}
+  el.classList.remove('hidden');
+  el.innerHTML=results.map((x,i)=>`<button type="button" data-select-company="${i}" role="option"><strong>${esc(x.symbol)}</strong><span>${esc(x.name||x.symbol)}</span><small>${esc(x.exchange||x.type||'')}</small></button>`).join('');
+}
+function clearSuggestions(){const el=$('tickerSuggestions');if(el){el.innerHTML='';el.classList.add('hidden');}suggestions=[];}
+async function fetchJsonMarket(url,controller){
+  const response=await fetch(marketUrl(url),{credentials:'omit',signal:controller.signal});
+  if(!response.ok)throw Error(response.status===429?'Rate limited — retry later':`Market-data service error (${response.status})`);
+  return response.json();
+}
+async function lookupCompanies(query,eid){
+  const q=query.trim();if(q.length<2 || eid!==current()?.id)return;
+  if(searchController)searchController.abort();searchController=new AbortController();
+  try{
+    const key=q.toLowerCase();let items;
+    const cached=searchCache.get(key);
+    if(cached && Date.now()-cached.at<600000)items=cached.items;
+    else{
+      const url='https://query1.finance.yahoo.com/v1/finance/search?quotesCount=8&newsCount=0&q='+encodeURIComponent(q);
+      const data=await fetchJsonMarket(url,searchController);
+      items=(data.quotes||[]).filter(x=>['EQUITY','ETF'].includes(x.quoteType)&&isTicker(x.symbol)).slice(0,8).map(x=>({symbol:x.symbol.toUpperCase(),name:x.longname||x.shortname||x.symbol,exchange:x.exchDisp||x.exchange||'',type:x.quoteType}));
+      searchCache.set(key,{items,at:Date.now()});
+    }
+    if(eid!==current()?.id)return;
+    showSuggestions(items,eid);if(!items.length)setLookupHelp('No matching stock found. You may still enter a ticker manually.',true);
+  }catch(err){if(err.name!=='AbortError'&&eid===current()?.id)setLookupHelp('Company search unavailable. Enter a ticker and try Refresh price.',true);}
+}
+async function loadQuote(symbol,eid,force=false){
+  symbol=symbol.trim().toUpperCase();if(!isTicker(symbol)||eid!==current()?.id)return;
+  const e=current();if(e.ticker.trim().toUpperCase()!==symbol)return;
+  const key=symbol,existing=quoteCache.get(key);
+  if(!force && existing&&Date.now()-existing.at<300000){applyQuote(existing.quote,eid);return;}
+  if(!force && quoteAttempts.has(key) && Date.now()-quoteAttempts.get(key)<60000)return;
+  quoteAttempts.set(key,Date.now());
+  if(quoteController)quoteController.abort();quoteController=new AbortController();
+  try{
+    const url='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(symbol)+'?range=1d&interval=1d';
+    const data=await fetchJsonMarket(url,quoteController),meta=data?.chart?.result?.[0]?.meta;
+    if(!meta||!Number.isFinite(Number(meta.regularMarketPrice))||Number(meta.regularMarketPrice)<=0)throw Error('No valid last price');
+    const quote={symbol:(meta.symbol||symbol).toUpperCase(),name:meta.longName||meta.shortName||'',price:Number(meta.regularMarketPrice),currency:meta.currency||'USD',asOf:Number(meta.regularMarketTime)>0?new Date(meta.regularMarketTime*1000).toISOString():isoNow(),type:meta.instrumentType||'EQUITY'};
+    quoteCache.set(key,{quote,at:Date.now()});applyQuote(quote,eid);
+  }catch(err){if(err.name!=='AbortError' && eid===current()?.id){setLookupHelp('Quote unavailable or delayed. Your ticker and research are still saved; try Refresh price or open StockAnalysis.com.',true);updateQuotePanel();}}
+}
+function applyQuote(q,eid){
+  const e=current();if(!e || eid!==e.id || e.ticker.trim().toUpperCase()!==q.symbol)return;
+  e.lastPrice=q.price;e.lastPriceCurrency=q.currency;e.lastPriceSymbol=q.symbol;e.lastPriceAt=q.asOf;
+  if(q.name){e.company=q.name;const input=$('field-company');if(input&&document.activeElement!==input)input.value=q.name;}
+  e.instrumentType=q.type;
+  const title=document.querySelector('#editorPanel .editor-top h3');if(title)title.innerHTML=`${esc(e.ticker.toUpperCase())}${e.company?` <span class="muted">· ${esc(e.company)}</span>`:''}`;
+  setLookupHelp('Last reported market quote. Prices can lag exchange feeds; not guaranteed real time.');
+  updateQuotePanel();autosave();renderList();
+}
+function selectCompany(index){
+  const e=current(),item=suggestions[index];if(!item||!e||suggestionEntryId!==e.id)return;
+  e.ticker=item.symbol;e.company=item.name;e.instrumentType=item.type;e.lastPrice=null;e.lastPriceSymbol='';e.lastPriceAt='';
+  const tick=$('field-ticker'),name=$('field-company');if(tick)tick.value=item.symbol;if(name)name.value=item.name;
+  clearSuggestions();updateQuotePanel();autosave();
+  const title=document.querySelector('#editorPanel .editor-top h3');if(title)title.innerHTML=`${esc(e.ticker)} <span class="muted">· ${esc(e.company)}</span>`;
+  renderList();loadQuote(e.ticker,e.id,true);
+}
+function planLookup(target){
+  const e=current();if(!e)return;
+  if(searchTimer)clearTimeout(searchTimer);if(quoteTimer)clearTimeout(quoteTimer);
+  if(searchController)searchController.abort();
+  const q=target.value.trim(),id=e.id;
+  if(target.dataset.field==='ticker'){
+    e.lastPriceSymbol=e.ticker.trim().toUpperCase()===e.lastPriceSymbol?e.lastPriceSymbol:'';
+    if(!q){clearSuggestions();updateQuotePanel();return;}
+    if(isTicker(q))quoteTimer=setTimeout(()=>loadQuote(q,id),650);
+  }
+  if(q.length>=2)searchTimer=setTimeout(()=>lookupCompanies(q,id),400);else clearSuggestions();
+  updateQuotePanel();
+}
+
 function renderEditor(openOverride){
   const el=$('editorPanel');const e=current();
   if(!e){el.innerHTML='<div class="blank-editor"><div class="blank-icon">↗</div><h3>Start with a thesis.</h3><p class="muted">Create an analysis, collect evidence as you research, and come back to see how your thinking evolved.</p><button type="button" class="btn btn-primary" id="emptyNewButton">+ New analysis</button></div>';return;}
@@ -206,9 +422,9 @@ function renderEditor(openOverride){
   const logs=[...e.logs].sort((a,b)=>b.at.localeCompare(a.at));
   el.innerHTML=`
     <div class="editor-top"><div><p class="section-overline">INVESTMENT RESEARCH / ${esc(STRATEGIES[e.strategy].name.toUpperCase())}</p><h3>${esc(e.ticker.trim().toUpperCase()||'Untitled analysis')}${e.company?` <span class="muted">· ${esc(e.company)}</span>`:''}</h3><div class="editor-heading-meta"><span class="status-pill ${esc(e.status)}">${esc(e.status)}</span><span class="muted small">Updated ${dateLabel(e.updatedAt)}</span></div></div><div class="editor-actions"><button type="button" class="btn btn-secondary small-btn" id="snapshotButton">Save snapshot</button><button type="button" class="btn btn-danger small-btn" id="deleteButton">Delete</button></div></div>
-    <section class="section-block"><div class="section-header"><h4>01 · Research idea</h4><span class="section-tag">AUTOSAVED</span></div><div class="form-grid">${field('Ticker / symbol','ticker',e.ticker)}${field('Company / asset','company',e.company)}${field('Idea / setup name','setup',e.setup)}${selectField('Research status','status',e.status,STATUSES)}</div></section>
+    <section class="section-block"><div class="section-header"><h4>01 · Research idea</h4><span class="section-tag">AUTOSAVED</span></div><div class="form-grid">${field('Ticker / symbol','ticker',e.ticker)}${field('Company / asset','company',e.company)}${field('Idea / setup name','setup',e.setup)}${selectField('Research status','status',e.status,STATUSES)}</div>${quotePanelMarkup(e)}</section>
     <section class="section-block"><div class="section-header"><div><h4>02 · Five-step investment framework</h4><p>Check your evidence, enter the data, and assess the weight of your findings.</p></div></div>
-      <div class="progress-section"><div class="progress-top"><span>Research checklist progress</span><strong id="progressPercent">${m.pct}%</strong></div><div class="progress-line"><div style="width:${m.pct}%" id="progressBar"></div></div><div class="progress-note" id="progressNote">${m.done} of ${m.total} prompts checked · ${m.rated} of ${e.stages.options.rating==='na'?'4':'5'} stages assessed. Completion is not a buy signal.</div></div>
+      <div class="progress-section"><div class="progress-top"><span>Research checklist progress</span><strong id="progressPercent">${m.pct}%</strong></div><div class="progress-line"><div style="width:${m.pct}%" id="progressBar"></div></div><div class="progress-note" id="progressNote">${m.done} of ${m.total} prompts checked · ${m.rated} of ${e.stages.options.rating==='na'?'4':'5'} stages scored. Completion is not a buy signal.</div><div id="overallSignal">${meterMarkup(allSignals(e),true)}</div></div>
       <div class="stage-list">${STAGES.map((s,i)=>stageMarkup(e,s,i,opened.has(s.key))).join('')}</div></section>
     <section class="section-block"><div class="section-header"><div><h4>03 · Thesis &amp; decision</h4><p>Separate your analysis from your intended action.</p></div></div>
       <div class="form-grid">${textArea('My investment thesis','thesis',e.thesis,'Why this company, why this direction, and why now?')}${textArea('What would invalidate my thesis?','invalidationReason',e.invalidationReason,'Specify what would make you change your mind.')}${selectField('Current decision','decision',e.decision,DECISIONS)}</div>
@@ -222,13 +438,17 @@ function renderEditor(openOverride){
     <section class="section-block"><div class="section-header"><div><h4>07 · Saved analysis snapshots</h4><p>Save a version whenever your thesis or decision changes significantly.</p></div><span class="section-tag">${e.snapshots.length} VERSIONS</span></div>
       ${snapshots.length?snapshots.map((s,i)=>`<div class="snapshot-item"><div><strong>Version ${e.snapshots.length-i} · ${esc(s.data.decision)}</strong><small>Saved ${dateLabel(s.at)} · ${esc(s.data.ticker||'Untitled')}</small></div><button type="button" class="btn btn-secondary small-btn" data-view-snapshot="${esc(s.id)}">Review version</button></div>`).join(''):'<p class="empty-text">No snapshots yet. Use “Save snapshot” to preserve a point-in-time version of all research fields.</p>'}
     </section>`;
+  // On reopening an analysis, refresh an absent or stale last quote once (rate-limited).
+  if(isTicker(e.ticker)&&e.ticker.trim()&&(!e.lastPriceAt||!Number.isFinite(Date.parse(e.lastPriceAt))||Date.now()-Date.parse(e.lastPriceAt)>300000)){
+    setTimeout(()=>{if(current()?.id===e.id)loadQuote(e.ticker,e.id);},80);
+  }
 }
 function captureOpen(){return new Set([...$('editorPanel').querySelectorAll('details[data-stage][open]')].map(x=>x.dataset.stage));}
 function rerenderEditor(){const open=captureOpen();renderEditor(open);}
 function renderHistory(){
   const filtered=filteredItems($('historyScope').value,$('historySearch').value,$('historyStatus').value),el=$('historyResults');
   if(!filtered.length){el.innerHTML='<div class="empty-history"><h4>No analyses found</h4><p>Save your first research idea or adjust the history filters.</p></div>';return;}
-  el.innerHTML=filtered.map(e=>{const m=metrics(e);return `<div class="history-item"><div><h4>${esc(e.ticker.trim().toUpperCase()||'UNTITLED')} <span class="muted">${esc(e.company)}</span></h4><p>${esc(e.setup||e.thesis.slice(0,150)||'No thesis recorded yet.')}</p><div class="history-facts"><span class="history-fact">${esc(STRATEGIES[e.strategy].name)}</span><span class="status-pill ${esc(e.status)}">${esc(e.status)}</span><span class="history-fact">${esc(e.decision)}</span><span class="history-fact">${m.done}/${m.total} checked</span><span class="history-fact">${e.logs.length} updates · ${e.snapshots.length} snapshots</span>${realizedOutcome(e)?`<span class="history-fact">Return ${realizedOutcome(e).pct>=0?'+':''}${realizedOutcome(e).pct.toFixed(2)}%</span>`:''}</div></div><div class="history-actions"><span class="muted small">${shortDate(e.updatedAt)}</span><button type="button" class="btn btn-secondary small-btn" data-history-open="${esc(e.id)}">Open analysis</button></div></div>`;}).join('');
+  el.innerHTML=filtered.map(e=>{const m=metrics(e),summary=allSignals(e);return `<div class="history-item"><div><h4>${esc(e.ticker.trim().toUpperCase()||'UNTITLED')} <span class="muted">${esc(e.company)}</span></h4><p>${esc(e.setup||e.thesis.slice(0,150)||'No thesis recorded yet.')}</p><div class="history-facts"><span class="history-fact">${esc(STRATEGIES[e.strategy].name)}</span><span class="status-pill ${esc(e.status)}">${esc(e.status)}</span><span class="history-fact">${esc(e.decision)}</span><span class="history-fact">${m.done}/${m.total} checked</span><span class="history-fact">${esc(summary.rating?summary.rating[0].toUpperCase()+summary.rating.slice(1):'Meter incomplete')}</span><span class="history-fact">${e.logs.length} updates · ${e.snapshots.length} snapshots</span>${realizedOutcome(e)?`<span class="history-fact">Return ${realizedOutcome(e).pct>=0?'+':''}${realizedOutcome(e).pct.toFixed(2)}%</span>`:''}</div></div><div class="history-actions"><span class="muted small">${shortDate(e.updatedAt)}</span><button type="button" class="btn btn-secondary small-btn" data-history-open="${esc(e.id)}">Open analysis</button></div></div>`;}).join('');
 }
 function savedSnapshot(){
   const e=current();if(!e)return;
@@ -244,7 +464,7 @@ function showSnapshot(id){
   const e=current(),s=e?.snapshots.find(x=>x.id===id);if(!s)return;app.snapshotId=id;
   const x=s.data;
   $('snapshotModalTitle').textContent=`${x.ticker?.toUpperCase()||'Untitled'} · ${dateLabel(s.at)}`;
-  $('snapshotContent').innerHTML=`<div class="snapshot-section"><h4>Decision &amp; thesis</h4><p>Status: ${esc(x.status)} · Decision: ${esc(x.decision)}</p><p>${esc(x.thesis||'No thesis recorded')}</p><p>Invalidation: ${esc(x.invalidationReason||'Not recorded')}</p></div>${STAGES.map(st=>{const v=x.stages[st.key];const observations=v.data.map(d=>`${d.metric}: ${d.value}${d.source?` (${d.source})`:''}`).join('\n');return `<div class="snapshot-section"><h4>${esc(st.name)} · ${esc(v.rating||'Not assessed')} · ${v.checks.filter(Boolean).length}/${st.checks.length} checked</h4><p>${esc(v.notes||'No analysis notes')}</p>${observations?`<p>Data points:\n${esc(observations)}</p>`:''}</div>`;}).join('')}<div class="snapshot-section"><h4>Trade / contract record</h4><p>Entry: ${esc(x.entryPrice||'—')} · Target: ${esc(x.targetPrice||'—')} · Invalidation: ${esc(x.stopPrice||'—')}</p><p>Exit: ${esc(x.exitPrice||'—')} · Capital: ${esc(x.capital||'—')} · Shares: ${esc(x.quantity||'—')}</p>${x.strategy==='leaps'?`<p>${esc(x.optionType)} · Strike ${esc(x.strike||'—')} · Expiration ${esc(x.expiration||'—')} · Entry premium ${esc(x.premium||'—')} · Exit premium ${esc(x.exitPremium||'—')}</p>`:''}<p>Lessons: ${esc(x.lesson||'Not recorded')}</p></div>`;
+  $('snapshotContent').innerHTML=`<div class="snapshot-section"><h4>Decision &amp; thesis</h4><p>Status: ${esc(x.status)} · Decision: ${esc(x.decision)}</p><p>${esc(x.thesis||'No thesis recorded')}</p><p>Invalidation: ${esc(x.invalidationReason||'Not recorded')}</p></div>${STAGES.map(st=>{const v=x.stages[st.key];const observations=v.data.map(d=>`${d.metric}: ${d.value}${d.source?` (${d.source})`:''}`).join('\n');const snapshotScore=stageSignal(x,st.key);return `<div class="snapshot-section"><h4>${esc(st.name)} · ${esc(snapshotScore.rating||'Insufficient readings')} · ${v.checks.filter(Boolean).length}/${st.checks.length} checked</h4><p>${esc(v.notes||'No analysis notes')}</p><p>${v.markers.map((m,i)=>v.checks[i]?`${m.name}: ${m.readings.join(' → ')} (${m.direction})`:'').filter(Boolean).map(esc).join('<br>')||'No numeric evidence saved'}</p>${observations?`<p>Data points:\n${esc(observations)}</p>`:''}</div>`;}).join('')}<div class="snapshot-section"><h4>Trade / contract record</h4><p>Entry: ${esc(x.entryPrice||'—')} · Target: ${esc(x.targetPrice||'—')} · Invalidation: ${esc(x.stopPrice||'—')}</p><p>Exit: ${esc(x.exitPrice||'—')} · Capital: ${esc(x.capital||'—')} · Shares: ${esc(x.quantity||'—')}</p>${x.strategy==='leaps'?`<p>${esc(x.optionType)} · Strike ${esc(x.strike||'—')} · Expiration ${esc(x.expiration||'—')} · Entry premium ${esc(x.premium||'—')} · Exit premium ${esc(x.exitPremium||'—')}</p>`:''}<p>Lessons: ${esc(x.lesson||'Not recorded')}</p></div>`;
   $('snapshotDialog').showModal();
 }
 function restoreSnapshot(){
@@ -275,7 +495,17 @@ function updateField(target){
       if(pill){pill.className=`status-pill ${e.status}`;pill.textContent=e.status;}
       renderList();
     }
+    if(['ticker','company'].includes(key))planLookup(target);
     return;
+  }
+  const markerEl=target.closest('[data-marker-stage][data-marker-index]');
+  if(markerEl && target.dataset.markerInput){
+    const stageKey=markerEl.dataset.markerStage,idx=Number(markerEl.dataset.markerIndex),st=e.stages[stageKey],m=st?.markers?.[idx];
+    if(!m)return;
+    if(target.dataset.markerInput==='reading'){m.readings[Number(target.dataset.readingIndex)]=target.value;}
+    if(target.dataset.markerInput==='name'){m.name=target.value;}
+    if(target.dataset.markerInput==='direction'){m.direction=target.value;}
+    syncStageRating(e,stageKey);autosave();redrawMeters();return;
   }
   const stage=target.dataset.notesStage;
   if(stage && e.stages[stage]){e.stages[stage].notes=target.value;autosave();return;}
@@ -316,12 +546,13 @@ function setupEvents(){
   $('entrySearch').addEventListener('input',renderList);$('entryStatusFilter').addEventListener('change',renderList);
   $('entryList').addEventListener('click',e=>{const b=e.target.closest('[data-open-id]');if(!b)return;persist();app.selectedId=b.dataset.openId;renderList();renderEditor();});
   const editor=$('editorPanel');
-  editor.addEventListener('input',e=>{const t=e.target;if(t.matches('[data-field],[data-notes-stage],[data-data-field]'))updateField(t);});
+  editor.addEventListener('input',e=>{const t=e.target;if(t.matches('[data-field],[data-notes-stage],[data-data-field],[data-marker-input]'))updateField(t);});
   editor.addEventListener('change',e=>{
-    const t=e.target;if(t.matches('[data-field],[data-notes-stage],[data-data-field]')){
+    const t=e.target;if(t.matches('[data-field],[data-notes-stage],[data-data-field],[data-marker-input]')){
       updateField(t);
     }
-    if(t.matches('[data-check-stage]')){const cur=current(),stage=cur?.stages[t.dataset.checkStage],i=Number(t.dataset.checkIndex);if(stage&&i>=0&&i<stage.checks.length){stage.checks[i]=t.checked;autosave();rerenderEditor();}}
+    if(t.matches('[data-check-stage]')){const cur=current(),stage=cur?.stages[t.dataset.checkStage],i=Number(t.dataset.checkIndex);if(stage&&i>=0&&i<stage.checks.length){stage.checks[i]=t.checked;syncStageRating(cur,t.dataset.checkStage);autosave();rerenderEditor();}}
+    if(t.matches('[data-stage-na]')){const cur=current();if(cur&&cur.strategy==='long-term'){cur.stages.options.rating=t.checked?'na':'';autosave();rerenderEditor();}}
   });
   editor.addEventListener('click',e=>{
     const t=e.target,b=t.closest('button');if(!b)return;
@@ -329,11 +560,13 @@ function setupEvents(){
     if(b.id==='snapshotButton'){savedSnapshot();return;}
     if(b.id==='deleteButton'){deleteEntry();return;}
     if(b.id==='addLogButton'){addLog();return;}
-    if(b.dataset.rateStage){const x=current(),stage=x?.stages[b.dataset.rateStage];if(stage){stage.rating=stage.rating===b.dataset.rate?'':b.dataset.rate;autosave();rerenderEditor();}return;}
+    if(b.id==='refreshQuoteButton'){const cur=current();if(cur?.ticker)loadQuote(cur.ticker,cur.id,true);return;}
+    if(b.dataset.selectCompany!==undefined){selectCompany(Number(b.dataset.selectCompany));return;}
     if(b.dataset.addData){addData(b.dataset.addData);return;}
     if(b.dataset.removeData){removeData(b.dataset.removeStage,b.dataset.removeData);return;}
     if(b.dataset.viewSnapshot){persist();showSnapshot(b.dataset.viewSnapshot);return;}
   });
+  editor.addEventListener('keydown',e=>{if(e.key==='Escape'&&e.target.matches('[data-field="ticker"],[data-field="company"]'))clearSuggestions();});
   $('historySearch').addEventListener('input',renderHistory);$('historyScope').addEventListener('change',renderHistory);$('historyStatus').addEventListener('change',renderHistory);
   $('historyResults').addEventListener('click',e=>{const b=e.target.closest('[data-history-open]');if(!b)return;const target=app.entries.find(x=>x.id===b.dataset.historyOpen);if(!target)return;setStrategy(target.strategy);app.selectedId=target.id;setView('journal');renderList();renderEditor();window.scrollTo({top:0,behavior:'smooth'});});
   $('exportButton').addEventListener('click',exportBackup);
