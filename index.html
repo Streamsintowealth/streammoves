@@ -43,7 +43,10 @@
           <p class="hero-side">Research first. Capital second.</p>
         </div>
         <nav class="strategy-tabs" id="strategyTabs" aria-label="Investment strategy">
-          <button class="strategy-tab active" type="button" data-strategy="swings" aria-pressed="true">
+          <button class="strategy-tab active" type="button" data-strategy="day" aria-pressed="true">
+            <span class="tab-icon" aria-hidden="true">◷</span><span>DAY TRADING</span><span class="tab-count" data-count="day">0</span>
+          </button>
+          <button class="strategy-tab" type="button" data-strategy="swings" aria-pressed="false">
             <span class="tab-icon" aria-hidden="true">↗</span><span>SWINGS</span><span class="tab-count" data-count="swings">0</span>
           </button>
           <button class="strategy-tab" type="button" data-strategy="leaps" aria-pressed="false">
@@ -59,9 +62,9 @@
     <main class="main-content">
       <div class="welcome-row">
         <div>
-          <p class="section-overline" id="strategyEyebrow">SWING RESEARCH WORKSPACE</p>
-          <h2 id="workspaceHeading">Your Swing Journal</h2>
-          <p class="muted" id="workspaceDescription">Keep your market thesis, technical setup, and decisions together.</p>
+          <p class="section-overline" id="strategyEyebrow">0–1 DTE / INTRADAY RESEARCH WORKSPACE</p>
+          <h2 id="workspaceHeading">Your Day Trading Journal</h2>
+          <p class="muted" id="workspaceDescription">Research intraday price action, Greeks, implied volatility, and defined option-premium risk.</p>
         </div>
         <button type="button" class="btn btn-primary" id="newEntryButton"><span class="plus">+</span> New analysis</button>
       </div>
@@ -96,7 +99,7 @@
         <div class="history-controls">
           <label class="search-box"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg><input id="historySearch" type="search" placeholder="Search all past analyses" aria-label="Search history"/></label>
           <label class="visually-hidden" for="historyScope">Filter history by strategy</label>
-          <select id="historyScope" class="filter-select"><option value="all">All three strategies</option><option value="swings">Swings</option><option value="leaps">LEAPS</option><option value="long-term">Long term</option></select>
+          <select id="historyScope" class="filter-select"><option value="all">All four strategies</option><option value="day">Day trading</option><option value="swings">Swings</option><option value="leaps">LEAPS</option><option value="long-term">Long term</option></select>
           <label class="visually-hidden" for="historyStatus">Filter history by status</label>
           <select id="historyStatus" class="filter-select"><option value="all">All statuses</option><option value="Researching">Researching</option><option value="Watching">Watching</option><option value="Open">Open</option><option value="Closed">Closed</option><option value="Avoided">Avoided</option></select>
         </div>

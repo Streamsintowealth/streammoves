@@ -6,6 +6,7 @@
 const STORAGE_KEY = 'streammoves_journal_v1';
 const FORMAT = 'streammoves-backup';
 const STRATEGIES = {
+  day: { name: 'Day Trading', title: 'Your Day Trading Journal', eyebrow: '0–1 DTE / INTRADAY RESEARCH WORKSPACE', desc: 'Research market direction, intraday setups, Greeks, implied volatility, and tightly defined premium risk.' },
   swings: { name: 'Swings', title: 'Your Swing Journal', eyebrow: 'SWING RESEARCH WORKSPACE', desc: 'Keep your market thesis, technical setup, and decisions together.' },
   leaps: { name: 'LEAPS', title: 'Your LEAPS Journal', eyebrow: 'LEAPS RESEARCH WORKSPACE', desc: 'Research longer-term ideas, contracts, volatility, and thesis changes.' },
   'long-term': { name: 'Long term', title: 'Your Long-Term Journal', eyebrow: 'LONG-TERM INVESTMENT WORKSPACE', desc: 'Evaluate business quality, valuation, conviction, and long-term progress.' }
@@ -17,6 +18,50 @@ const STAGES = [
   { key: 'technical', name: 'Technical Confirmation', description: 'Look for a defined setup rather than a guess.', checks: ['Primary trend / market structure confirmed', '20 / 50 / 200-day moving averages checked', 'Supply / demand zones marked', 'Volume / candlestick behavior assessed', 'FVG / imbalance / liquidity reviewed', 'Entry, invalidation, risk/reward considered'] },
   { key: 'options', name: 'Options Activity & Positioning', description: 'Review what options markets may be pricing in.', checks: ['Open interest / volume checked', 'Implied volatility / IV rank reviewed', 'Calls vs puts / positioning examined', 'Expected move / key expirations checked', 'Greeks / spread liquidity reviewed'] }
 ];
+// Dedicated intraday framework; each checklist item owns a 3-reading numeric meter.
+// No automatic trades or fabricated real-time market/option chain data.
+const DAY_STAGES = [
+  {key:'day-market', name:'Market Bias & Catalysts',description:'Identify market direction and event risk before considering a 0–1 DTE entry.',checks:[
+    'Index opening momentum evaluated','VIX / volatility reaction reviewed','Breadth / advance-decline checked','Economic release and event risk checked','Index or sector relative strength compared']},
+  {key:'day-structure', name:'Intraday Structure & Liquidity',description:'Use the opening range, VWAP, liquidity sweeps, and volume to map plausible levels.',checks:[
+    'Price relative to VWAP reviewed','Opening range breakout / rejection mapped','Relative volume confirmed','Liquidity sweep / FVG and retest identified','Order flow / buying-selling volume reviewed']},
+  {key:'day-entry', name:'Entry Confirmation & Reward/Risk',description:'Determine whether a completed candle setup provides enough room to the target.',checks:[
+    '5-minute candle close confirmed','15-minute directional confirmation checked','Target and stop distances measured','Risk/reward measured before entry','Room to supply or demand assessed']},
+  {key:'day-greeks', name:'Greeks & Contract Quality',description:'Analyze the exact strike and expiration; price sensitivity can change rapidly near expiry.',checks:[
+    'Delta of the chosen contract checked','Gamma exposure and acceleration reviewed','Theta decay / time remaining examined','Vega and IV sensitivity reviewed','Bid-ask spread and contract liquidity reviewed']},
+  {key:'day-iv', name:'IV, Expected Move & Positioning',description:'Compare implied movement with the real trading range and the proposed setup.',checks:[
+    'Implied volatility / IV percentile checked','Implied expected move reviewed','Put/call volume or positioning checked','Open interest / major strikes checked','VIX / volatility term structure reviewed']}
+];
+const DAY_MARKER_DEFS = {
+  'day-market': [
+    ['SPX move since open (%)','choose'],['VIX change since open (%)','down'],
+    ['Advancers minus decliners (count)','up'],['Economic event surprise (actual minus consensus)','choose'],
+    ['NDX move minus SPX move (pp)','choose']
+  ],
+  'day-structure': [
+    ['Underlying price vs VWAP (%)','choose'],['Price vs opening-range high (%)','choose'],
+    ['Relative volume vs typical interval (x)','choose'],['Price vs liquidity level (%)','choose'],
+    ['Cumulative buying-minus-selling delta','choose']
+  ],
+  'day-entry': [
+    ['5-minute close vs trigger level (%)','choose'],['15-minute close vs key level (%)','choose'],
+    ['Reward distance to target (points)','choose'],['Planned reward-to-risk multiple (R)','up'],
+    ['Distance to opposing supply/demand (points)','choose']
+  ],
+  'day-greeks': [
+    ['Selected contract delta (signed)','choose'],['Gamma (per 1-point underlying move)','choose'],
+    ['Theta ($ per share per day)','choose'],['Vega ($ per share per 1 vol point)','choose'],
+    ['Bid-ask spread (% of midpoint)','down']
+  ],
+  'day-iv': [
+    ['Contract implied volatility (%)','choose'],['IV percentile (%)','choose'],
+    ['Implied expected move to expiry (%)','choose'],['Put/call volume ratio','choose'],
+    ['Open interest at target strike (contracts)','choose']
+  ]
+};
+const stageList = entry => entry?.strategy === 'day' ? DAY_STAGES : STAGES;
+const markerDefs = key => DAY_MARKER_DEFS[key] || MARKER_DEFS[key] || [];
+
 // Numeric markers are editable. Directions are transparent assumptions, not forecasts.
 // Five-step meters use three chronological readings and only checked, complete markers.
 const MARKER_DEFS = {
@@ -85,6 +130,44 @@ const RESEARCH_SOURCES = {
     {check:'{options-greeks}',mark:'{options-greeks}',name:'Barchart Greeks'}
   ]
 };
+// Verified research destinations where available; some quote/Greek views are delayed or paid.
+Object.assign(RESEARCH_SOURCES, {
+ 'day-market': [
+  {check:'https://www.tradingview.com/symbols/SP-SPX/',mark:'https://www.tradingview.com/symbols/SP-SPX/',name:'TradingView SPX chart'},
+  {check:'https://www.cboe.com/tradable_products/vix/',mark:'https://www.tradingview.com/symbols/CBOE-VIX/',name:'Cboe VIX'},
+  {check:'https://www.tradingview.com/markets/stocks-usa/market-movers-advancers/',mark:'https://www.tradingview.com/markets/stocks-usa/market-movers-advancers/',name:'Market advancers / decliners'},
+  {check:'https://www.bls.gov/schedule/news_release/',mark:'https://www.investing.com/economic-calendar/',name:'BLS / Economic calendar'},
+  {check:'https://www.tradingview.com/symbols/NASDAQ-NDX/',mark:'https://www.tradingview.com/symbols/NASDAQ-NDX/',name:'TradingView NDX chart'}
+ ],
+ 'day-structure': [
+  {check:'{chart}',mark:'{chart}',name:'TradingView VWAP chart'},
+  {check:'{chart}',mark:'{chart}',name:'TradingView Opening Range'},
+  {check:'{chart}',mark:'{chart}',name:'TradingView Volume'},
+  {check:'{chart}',mark:'{chart}',name:'TradingView Liquidity / FVG'},
+  {check:'https://www.tradingview.com/markets/stocks-usa/market-movers-active/',mark:'{chart}',name:'TradingView Active Stocks / Chart'}
+ ],
+ 'day-entry': [
+  {check:'{chart}',mark:'{chart}',name:'TradingView 5m Candles'},
+  {check:'{chart}',mark:'{chart}',name:'TradingView 15m Candles'},
+  {check:'{chart}',mark:'{chart}',name:'TradingView Price Levels'},
+  {check:'https://www.optionsprofitcalculator.com/',mark:'https://www.optionsprofitcalculator.com/',name:'Options Profit Calculator'},
+  {check:'{chart}',mark:'{chart}',name:'TradingView Price Zones'}
+ ],
+ 'day-greeks': [
+  {check:'{options-greeks}',mark:'{options-greeks}',name:'Barchart Contract Greeks'},
+  {check:'{options-greeks}',mark:'{options-greeks}',name:'Barchart Gamma'},
+  {check:'{options-greeks}',mark:'{options-greeks}',name:'Barchart Theta'},
+  {check:'{options-greeks}',mark:'{options-greeks}',name:'Barchart Vega'},
+  {check:'{options-chain}',mark:'{options-chain}',name:'Barchart Option Chain'}
+ ],
+ 'day-iv': [
+  {check:'{options-data}',mark:'{options-data}',name:'Barchart IV Data'},
+  {check:'https://optionsband.com/',mark:'https://optionsband.com/',name:'OptionsBand Expected Move'},
+  {check:'https://www.cboe.com/markets/us/options/market-statistics/daily/',mark:'https://www.cboe.com/markets/us/options/market-statistics/daily/',name:'Cboe Put/Call Statistics'},
+  {check:'{options-chain}',mark:'{options-chain}',name:'Barchart OI / Strike Chain'},
+  {check:'https://www.cboe.com/tradable_products/vix/',mark:'https://www.cboe.com/tradable_products/vix/',name:'Cboe VIX / IV'}
+ ]
+});
 function companyResearchUrl(token,entry){
   const symbol=String(entry?.ticker||'').trim().toUpperCase();
   const valid=/^[A-Z][A-Z0-9.\-]{0,11}$/.test(symbol);
@@ -95,7 +178,7 @@ function companyResearchUrl(token,entry){
     return `https://stockanalysis.com/stocks/${symbol.toLowerCase()}/${tail}`;
   }
   const paths={'{technical}':'technical-analysis','{options-data}':'options-data','{options-flow}':'options-flow','{options-chain}':'options','{options-greeks}':'volatility-greeks'};
-  if(paths[token])return valid?`https://www.barchart.com/stocks/quotes/${encodeURIComponent(symbol)}/${paths[token]}`:'https://www.barchart.com/';
+  if(paths[token]){if(['SPX','NDX','VIX','XSP','RUT'].includes(symbol))return `https://www.cboe.com/data/quotes/${encodeURIComponent(symbol)}/options`;return valid?`https://www.barchart.com/stocks/quotes/${encodeURIComponent(symbol)}/${paths[token]}`:'https://www.barchart.com/';}
   return token;
 }
 function researchSource(stage,index,kind,entry){
@@ -103,7 +186,7 @@ function researchSource(stage,index,kind,entry){
   if(!source)return null;
   const marker=entry?.stages?.[stage]?.markers?.[index];
   // Edited indicator names receive a clearly identified search instead of a misleading hardcoded source.
-  if(kind==='mark'&&marker&&marker.name.trim().toLowerCase()!==MARKER_DEFS[stage][index][0].toLowerCase()){
+  if(kind==='mark'&&marker&&marker.name.trim().toLowerCase()!==markerDefs(stage)[index][0].toLowerCase()){
     return {url:'https://www.google.com/search?q='+encodeURIComponent(`${marker.name} historical data source ${entry?.ticker||''}`),text:'Find source ↗',description:'Find a source for your customized indicator'};
   }
   const url=companyResearchUrl(source[kind],entry);
@@ -121,6 +204,9 @@ function updateResearchLinks(entry){
     if(!src)return;
     el.href=src.url;el.textContent=src.text;el.title=src.description;el.setAttribute('aria-label',src.description);
   });
+  document.querySelectorAll('[data-day-contract-source]').forEach(el=>{
+    el.href=companyResearchUrl(el.dataset.dayContractSource==='greeks'?'{options-greeks}':'{options-chain}',entry);
+  });
 }
 
 const MARKET_PROXY = 'https://proxy.cors.dev/';
@@ -133,6 +219,16 @@ const stockAnalysisUrl = (ticker, instrument='EQUITY') => {
   if(!/^[a-z0-9-]{1,12}$/.test(symbol))return 'https://stockanalysis.com/';
   return 'https://stockanalysis.com/'+(instrument==='ETF'?'etf/':'stocks/')+symbol+'/';
 };
+const dayIndexMeta = {
+ SPX:{feed:'^GSPC',title:'S&P 500',url:'https://www.tradingview.com/symbols/SP-SPX/'},
+ NDX:{feed:'^NDX',title:'Nasdaq-100',url:'https://www.tradingview.com/symbols/NASDAQ-NDX/'},
+ VIX:{feed:'^VIX',title:'Cboe VIX',url:'https://www.tradingview.com/symbols/CBOE-VIX/'},
+ RUT:{feed:'^RUT',title:'Russell 2000',url:'https://www.tradingview.com/symbols/TVC-RUT/'}
+};
+function quoteResearchLink(entry){
+ const key=entry?.ticker?.trim().toUpperCase(),index=entry?.strategy==='day'?dayIndexMeta[key]:null;
+ return index?{url:index.url,label:'Index chart ↗'}:{url:stockAnalysisUrl(key,entry?.instrumentType),label:'StockAnalysis.com ↗'};
+}
 const isTicker = value => /^[A-Za-z^][A-Za-z0-9.\-=^]{0,14}$/.test(String(value||'').trim());
 const amountText = (price, currency='USD') => {
   if(!Number.isFinite(Number(price)))return 'Unavailable';
@@ -156,20 +252,21 @@ const validDate = (s) => typeof s === 'string' && !Number.isNaN(Date.parse(s));
 const deepCopy = (x) => JSON.parse(JSON.stringify(x));
 const optionMarkup = (items, selected) => items.map(x => `<option value="${esc(x)}" ${selected === x ? 'selected' : ''}>${esc(x)}</option>`).join('');
 
-function emptyStage(s) {return {rating:'',checks:s.checks.map(()=>false),markers:MARKER_DEFS[s.key].map(([name,direction])=>({name,direction,readings:['','','']})),notes:'',data:[]};}
+function emptyStage(s) {return {rating:'',checks:s.checks.map(()=>false),markers:markerDefs(s.key).map(([name,direction])=>({name,direction,readings:['','','']})),notes:'',data:[]};}
 function createEntry(strategy='swings') {
   const stamp=isoNow();
   return {id:makeId(),strategy,ticker:'',company:'',setup:'',status:'Researching',decision:'Undecided',thesis:'',invalidationReason:'',lesson:'',
     direction:'Long',timeframe:'Daily',entryPrice:'',targetPrice:'',stopPrice:'',exitPrice:'',capital:'',quantity:'',exitPremium:'',openedDate:'',closedDate:'',
     optionType:'Call',expiration:'',strike:'',premium:'',contracts:'',delta:'',ivRank:'',reviewDate:'',allocation:'',
+    gamma:'',theta:'',vega:'',ivPercent:'',bidPrice:'',askPrice:'',openInterest:'',optionVolume:'',expectedMove:'',targetPremium:'',stopPremium:'',maxDailyLoss:'',openingRangeHigh:'',openingRangeLow:'',vwap:'',setupTime:'',
     lastPrice:null,lastPriceCurrency:'USD',lastPriceAt:'',lastPriceSymbol:'',instrumentType:'EQUITY',
-    stages:Object.fromEntries(STAGES.map(s=>[s.key,emptyStage(s)])),logs:[],snapshots:[],createdAt:stamp,updatedAt:stamp};
+    stages:Object.fromEntries(stageList({strategy}).map(s=>[s.key,emptyStage(s)])),logs:[],snapshots:[],createdAt:stamp,updatedAt:stamp};
 }
 function normalizeCore(raw) {
   if(!raw || typeof raw!=='object' || Array.isArray(raw)) throw Error('Invalid analysis entry');
   const e=createEntry(Object.hasOwn(STRATEGIES,raw.strategy)?raw.strategy:'swings');
   e.id=plain(raw.id,128)||makeId();
-  for(const k of ['ticker','company','setup','thesis','invalidationReason','lesson','entryPrice','targetPrice','stopPrice','exitPrice','capital','quantity','exitPremium','openedDate','closedDate','expiration','strike','premium','contracts','delta','ivRank','reviewDate','allocation','lastPriceCurrency','lastPriceAt','lastPriceSymbol','instrumentType']) e[k]=plain(raw[k]);
+  for(const k of ['ticker','company','setup','thesis','invalidationReason','lesson','entryPrice','targetPrice','stopPrice','exitPrice','capital','quantity','exitPremium','openedDate','closedDate','expiration','strike','premium','contracts','delta','ivRank','reviewDate','allocation','lastPriceCurrency','lastPriceAt','lastPriceSymbol','instrumentType','gamma','theta','vega','ivPercent','bidPrice','askPrice','openInterest','optionVolume','expectedMove','targetPremium','stopPremium','maxDailyLoss','openingRangeHigh','openingRangeLow','vwap','setupTime']) e[k]=plain(raw[k]);
   e.lastPrice=raw.lastPrice!==null&&Number.isFinite(Number(raw.lastPrice))&&Number(raw.lastPrice)>0?Number(raw.lastPrice):null;
   e.status=STATUSES.includes(raw.status)?raw.status:'Researching';
   e.decision=DECISIONS.includes(raw.decision)?raw.decision:'Undecided';
@@ -178,7 +275,7 @@ function normalizeCore(raw) {
   e.optionType=['Call','Put'].includes(raw.optionType)?raw.optionType:'Call';
   e.createdAt=validDate(raw.createdAt)?raw.createdAt:e.createdAt;
   e.updatedAt=validDate(raw.updatedAt)?raw.updatedAt:e.updatedAt;
-  for(const s of STAGES){
+  for(const s of stageList(e)){
     const a=raw.stages?.[s.key];
     if(!a || typeof a!=='object')continue;
     const st=e.stages[s.key];
@@ -188,7 +285,7 @@ function normalizeCore(raw) {
     st.markers=st.markers.map((m,i)=>{const source=a.markers?.[i]||{};return {name:plain(source.name,120)||m.name,direction:['up','down','choose'].includes(source.direction)?source.direction:m.direction,readings:[0,1,2].map(j=>plain(source.readings?.[j],45))};});
     st.data=Array.isArray(a.data)?a.data.slice(0,500).map(d=>({id:plain(d?.id,128)||makeId(),metric:plain(d?.metric,1000),value:plain(d?.value,2000),source:plain(d?.source,2500),recordedAt:validDate(d?.recordedAt)?d.recordedAt:isoNow()})):[];
   }
-  for(const st of STAGES){const v=e.stages[st.key];if(v.rating!=='na')v.rating=stageSignal(e,st.key).rating;}
+  for(const st of stageList(e)){const v=e.stages[st.key];if(v.rating!=='na')v.rating=stageSignal(e,st.key).rating;}
   return e;
 }
 function normalizeEntry(raw) {
@@ -205,7 +302,7 @@ function loadEntries(){
     return parsed.slice(0,5000).map(normalizeEntry);
   }catch(err){console.error('Stream Moves could not read local storage',err);return [];}
 }
-const app={entries:loadEntries(),strategy:'swings',selectedId:null,view:'journal',pending:null,snapshotId:null,toastTimer:null,storageError:false};
+const app={entries:loadEntries(),strategy:'day',selectedId:null,view:'journal',pending:null,snapshotId:null,toastTimer:null,storageError:false};
 
 function persist(){
   if(app.pending){clearTimeout(app.pending);app.pending=null;}
@@ -254,7 +351,7 @@ function syncStageRating(entry,key){
   const st=entry.stages[key];if(st.rating!=='na')st.rating=stageSignal(entry,key).rating;
 }
 function allSignals(entry){
-  const stages=STAGES.map(x=>stageSignal(entry,x.key)).filter(s=>s.rating!=='na');
+  const stages=stageList(entry).map(x=>stageSignal(entry,x.key)).filter(s=>s.rating!=='na');
   const ready=stages.filter(x=>x.rating).length;
   const score=ready?stages.filter(x=>x.rating).reduce((a,x)=>a+x.score,0)/ready:0;
   const enough=ready===stages.length && ready>0;
@@ -268,7 +365,7 @@ function meterMarkup(signal,overview=false){
 }
 function redrawMeters(){
   const e=current();if(!e)return;
-  for(const s of STAGES){
+  for(const s of stageList(e)){
     const signal=stageSignal(e,s.key),el=$('meter-'+s.key),card=document.querySelector(`[data-stage="${s.key}"]`);
     if(el)el.innerHTML=meterMarkup(signal);
     const tag=card?.querySelector('.stage-tag');
@@ -278,12 +375,12 @@ function redrawMeters(){
   }
   const overall=$('overallSignal');if(overall)overall.innerHTML=meterMarkup(allSignals(e),true);
   const m=metrics(e),progress=$('progressNote');
-  if(progress)progress.textContent=`${m.done} of ${m.total} prompts checked · ${m.rated} of ${STAGES.length-(e.stages.options.rating==='na'?1:0)} stages scored. Completion is not a buy signal.`;
+  if(progress)progress.textContent=`${m.done} of ${m.total} prompts checked · ${m.rated} of ${stageList(e).length-(e.stages.options?.rating==='na'?1:0)} stages scored. Completion is not a buy signal.`;
 }
 
 function metrics(e){
   let done=0,total=0,rated=0;
-  for(const s of STAGES){const st=e.stages[s.key];if(st.rating==='na')continue;done+=st.checks.filter(Boolean).length;total+=st.checks.length;if(stageSignal(e,s.key).rating)rated++;}
+  for(const s of stageList(e)){const st=e.stages[s.key];if(st.rating==='na')continue;done+=st.checks.filter(Boolean).length;total+=st.checks.length;if(stageSignal(e,s.key).rating)rated++;}
   return {done,total,rated,pct:total?Math.round(done/total*100):0};
 }
 function refreshSummary(){
@@ -319,7 +416,7 @@ function newEntry(){
   showToast('New analysis created. Your research saves automatically.');
 }
 function filteredItems(strategy,search,status){
-  const q=search.trim().toLowerCase();return app.entries.filter(e=>(strategy==='all'||e.strategy===strategy)&&(status==='all'||e.status===status)&&(!q||[e.ticker,e.company,e.setup,e.thesis,e.lesson,...STAGES.flatMap(s=>[e.stages[s.key].notes,...e.stages[s.key].data.flatMap(d=>[d.metric,d.value])]),...e.logs.map(l=>l.text)].join(' ').toLowerCase().includes(q))).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
+  const q=search.trim().toLowerCase();return app.entries.filter(e=>(strategy==='all'||e.strategy===strategy)&&(status==='all'||e.status===status)&&(!q||[e.ticker,e.company,e.setup,e.thesis,e.lesson,...stageList(e).flatMap(s=>[e.stages[s.key].notes,...e.stages[s.key].data.flatMap(d=>[d.metric,d.value])]),...e.logs.map(l=>l.text)].join(' ').toLowerCase().includes(q))).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
 }
 function renderList(){
   const all=app.entries.filter(e=>e.strategy===app.strategy);
@@ -344,7 +441,7 @@ function stageMarkup(e,s,i,open){
     <summary><span class="stage-index">0${i+1}</span><span class="stage-title-wrap"><strong>${esc(s.name)}</strong><small>${checked}/${s.checks.length} checked · ${signal.ready} complete readings</small></span><span class="stage-side"><span class="stage-tag ${esc(signal.rating||'pending')}">${esc(label)}</span><span class="stage-arrow" aria-hidden="true">⌄</span></span></summary>
     <div class="stage-body"><p class="stage-body-intro">${esc(s.description)}</p>
       <div id="meter-${s.key}">${meterMarkup(signal)}</div>
-      <p class="hint-text">The meter uses checked markers only. Fill in all three numeric readings (oldest → latest), and choose which direction favors bullish. At least 3 complete markers are required. Trends are not forecasts.</p>
+      <p class="hint-text">${e.strategy==='day'?'Use three chronological intraday readings (for example, 9:45 → 10:00 → 10:15 ET). This measures directional bias, NOT option safety; choose the favorable direction per indicator and your call/put thesis.':'The meter uses checked markers only. Fill in all three numeric readings (oldest → latest), and choose which direction favors bullish. At least 3 complete markers are required. Trends are not forecasts.'}</p>
       ${s.key==='options' && e.strategy==='long-term'?`<label class="na-row"><input type="checkbox" data-stage-na="options" ${st.rating==='na'?'checked':''}> Options not applicable to this long-term position</label>`:''}
       <p class="checklist-heading">Evidence checklist + last three readings</p><div class="evidence-metrics">${s.checks.map((c,j)=>{
         const m=st.markers[j],v=m.readings,score=st.checks[j]?markerSignal(m):null;
@@ -366,14 +463,14 @@ function stageMarkup(e,s,i,open){
 }
 function snapshotCore(e){const raw=deepCopy(e);delete raw.logs;delete raw.snapshots;return raw;}
 function riskReward(e){const en=Number(e.entryPrice),t=Number(e.targetPrice),stop=Number(e.stopPrice);if(!e.entryPrice||!e.targetPrice||!e.stopPrice||![en,t,stop].every(Number.isFinite)||en<=0)return 'Add entry, target and invalidation prices to assess risk/reward.';
-  const reward=Math.abs(t-en),risk=Math.abs(en-stop),long=e.strategy==='leaps'?e.optionType!=='Put':e.direction!=='Short';
+  const reward=Math.abs(t-en),risk=Math.abs(en-stop),long=['leaps','day'].includes(e.strategy)?e.optionType!=='Put':e.direction!=='Short';
   if(risk===0)return 'Invalidation cannot equal entry price.';
   if((long&&(t<=en||stop>=en))||(!long&&(t>=en||stop<=en)))return 'Check direction: target and invalidation must be on opposite sides of entry.';
   return `Planned reward/risk: ${(reward/risk).toFixed(2)} : 1 (price levels only; ignores fees and options pricing).`;
 }
 function realizedOutcome(e){
   if(e.status!=='Closed')return null;
-  if(e.strategy==='leaps'){
+  if(e.strategy==='leaps'||e.strategy==='day'){
     const buy=Number(e.premium),sell=Number(e.exitPremium),contracts=Number(e.contracts);
     if(!e.premium||!e.exitPremium||!Number.isFinite(buy)||!Number.isFinite(sell)||buy<=0)return null;
     const pct=(sell-buy)/buy*100;
@@ -384,6 +481,23 @@ function realizedOutcome(e){
   const sign=e.strategy==='swings'&&e.direction==='Short'?-1:1;
   return {pct:((sell-buy)/buy)*sign*100,dollars:e.quantity&&Number.isFinite(qty)&&qty>0?(sell-buy)*sign*qty:null,kind:'Position price change'};
 }
+function daySpreadSummary(e){
+ const bid=Number(e.bidPrice),ask=Number(e.askPrice);
+ if(!e.bidPrice||!e.askPrice||![bid,ask].every(Number.isFinite)||bid<0||ask<=0||ask<bid)return 'Bid/ask spread: enter current bid and ask to evaluate execution cost.';
+ const spread=(ask-bid)/((ask+bid)/2)*100;
+ return `Quoted spread: $${(ask-bid).toFixed(3)} (${spread.toFixed(1)}% of midpoint)${spread>10?' — relatively wide for a short-dated contract; recheck liquidity.':''}. Quotes may be delayed.`;
+}
+function dayPremiumRisk(e){
+  const entry=Number(e.premium),target=Number(e.targetPremium),stop=Number(e.stopPremium),n=Number(e.contracts);
+  if(!e.premium||!e.targetPremium||!e.stopPremium||![entry,target,stop].every(Number.isFinite))return 'Add contract entry, profit-target and stop premiums to calculate your options reward/risk.';
+  if(entry<=0||target<=entry||stop<0||stop>=entry)return 'Target premium must exceed entry; stop premium must be nonnegative and below entry.';
+  const reward=target-entry,risk=entry-stop,ratio=reward/risk;
+  const per=entry*100,profit=reward*100,loss=risk*100;
+  const dollars=Number.isInteger(n)&&n>0?` · ${n} contract${n>1?'s':''}: +$${(profit*n).toFixed(2)} / −$${(loss*n).toFixed(2)}`:'';
+  const max=Number(e.maxDailyLoss);
+  const warning=e.maxDailyLoss&&Number.isFinite(max)&&max>0&&Number.isInteger(n)&&n>0&&loss*n>max?' · WARNING: planned loss exceeds your entered daily loss cap.':'';
+  return `Premium target +${(reward/entry*100).toFixed(1)}% / stop −${(risk/entry*100).toFixed(1)}% · ${ratio.toFixed(2)}:1 R/R · per contract +$${profit.toFixed(2)} / −$${loss.toFixed(2)}${dollars}${warning}. Estimates only; spreads, fees and fast moves can change actual fills.`;
+}
 function outcomeText(e){
   const outcome=realizedOutcome(e);
   if(!outcome)return 'Set status to Closed and record entry and exit prices (or option premiums) to calculate a simple realized return.';
@@ -393,23 +507,29 @@ function outcomeText(e){
 }
 function extraFields(e){
   if(e.strategy==='swings')return `<div class="form-grid">${selectField('Trade direction','direction',e.direction,['Long','Short'])}${selectField('Chart timeframe','timeframe',e.timeframe,['4H','Daily','Weekly','Other'])}</div>`;
+  if(e.strategy==='day')return `<div class="day-trade-focus"><strong>0–1 DTE contract and execution plan</strong><p>Enter actual contract-chain values manually. Greeks and IV change intraday. Confirm liquidity, the economic calendar, and your planned exit before placing a trade.</p></div>
+    <div class="form-grid three">${selectField('Option type','optionType',e.optionType,['Call','Put'])}${dateField('Expiration (0–1 DTE)','expiration',e.expiration)}${field('Strike price','strike',e.strike)}${field('Entry premium / share ($)','premium',e.premium)}${field('Profit target premium ($)','targetPremium',e.targetPremium)}${field('Stop premium ($)','stopPremium',e.stopPremium)}${field('Exit premium / share ($)','exitPremium',e.exitPremium)}${field('Contracts (100 multiplier)','contracts',e.contracts)}${field('Max daily loss ($)','maxDailyLoss',e.maxDailyLoss)}</div>
+    <div class="premium-risk-note" id="dayPremiumRisk">${esc(dayPremiumRisk(e))}</div>
+    <div class="day-subhead">Greeks &amp; live-chain observations <a data-day-contract-source="greeks" href="${esc(companyResearchUrl('{options-greeks}',e))}" target="_blank" rel="noopener noreferrer">Greeks ↗</a> <a data-day-contract-source="chain" href="${esc(companyResearchUrl('{options-chain}',e))}" target="_blank" rel="noopener noreferrer">Options chain ↗</a> <a href="https://www.cboe.com/markets/us/options/market-statistics/daily/" target="_blank" rel="noopener noreferrer">Cboe data ↗</a></div>
+    <div class="form-grid three">${field('Delta','delta',e.delta)}${field('Gamma','gamma',e.gamma)}${field('Theta ($/share/day)','theta',e.theta)}${field('Vega ($/share/IV point)','vega',e.vega)}${field('Contract IV (%)','ivPercent',e.ivPercent)}${field('IV rank (%)','ivRank',e.ivRank)}${field('Bid premium ($)','bidPrice',e.bidPrice)}${field('Ask premium ($)','askPrice',e.askPrice)}${field('Open interest','openInterest',e.openInterest)}${field('Option volume','optionVolume',e.optionVolume)}${field('Expected underlying move','expectedMove',e.expectedMove)}${field('Setup time (ET)','setupTime',e.setupTime)}${field('Opening range high','openingRangeHigh',e.openingRangeHigh)}${field('Opening range low','openingRangeLow',e.openingRangeLow)}${field('VWAP','vwap',e.vwap)}</div>
+    <p class="hint-text day-spread-note" id="daySpreadNote">${esc(daySpreadSummary(e))}</p><p class="hint-text">0DTE can lose the full premium quickly. Stop orders may slip; assignment, exercise and broker cutoffs vary by product. Daily option theta is not a constant intraday decay rate. Use your broker’s current chain for execution.</p>`;
   if(e.strategy==='leaps')return `<div class="form-grid three">${selectField('Option type','optionType',e.optionType,['Call','Put'])}${dateField('Expiration date','expiration',e.expiration)}${field('Strike price','strike',e.strike)}${field('Entry premium per share','premium',e.premium)}${field('Exit premium per share','exitPremium',e.exitPremium)}${field('Number of contracts','contracts',e.contracts)}${field('Delta','delta',e.delta)}${field('IV rank (%)','ivRank',e.ivRank)}</div><p class="hint-text">Record the actual contract, liquidity, and other Greeks in step 5. Options pricing cannot be inferred from the underlying share price alone.</p>`;
   return `<div class="form-grid">${field('Target portfolio allocation (%)','allocation',e.allocation)}${dateField('Next thesis review','reviewDate',e.reviewDate)}</div>`;
 }
 function quotePanelMarkup(e){
   const symbol=e.ticker?.trim().toUpperCase(),valid=symbol&&isTicker(symbol),hasQuote=valid&&e.lastPriceSymbol===symbol&&Number.isFinite(e.lastPrice)&&e.lastPrice>0;
   const quoteAt=hasQuote&&validDate(e.lastPriceAt)?dateLabel(e.lastPriceAt):'';
-  const stockUrl=valid?stockAnalysisUrl(symbol,e.instrumentType):'https://stockanalysis.com/';
+  const stockUrl=valid?quoteResearchLink(e).url:'https://stockanalysis.com/';
   return `<div class="market-lookup"><div class="market-lookup-top"><strong>Company lookup &amp; last reported stock price</strong><button class="btn btn-secondary small-btn" id="refreshQuoteButton" type="button" ${!valid?'disabled':''}>Refresh price</button></div>
   <div id="tickerSuggestions" class="ticker-suggestions hidden" role="listbox" aria-label="Matching companies"></div>
   <div class="quote-result" id="quoteResult"><div><strong>${hasQuote?esc(amountText(e.lastPrice,e.lastPriceCurrency)):valid?'Price not loaded':'Search a ticker or company name'}</strong><small>${hasQuote?`Last reported ${esc(quoteAt)} · ${esc(e.lastPriceCurrency||'USD')} · may be delayed`:valid?'Price updates on search or refresh':'Enter a company name or symbol above to see matches'}</small></div>
-  <a href="${esc(stockUrl)}" target="_blank" rel="noopener noreferrer">${valid?'StockAnalysis.com ↗':'Open StockAnalysis.com ↗'}</a></div><p class="market-lookup-help" id="marketLookupHelp">Prices are external, may be delayed, and can be unavailable. Your journal notes are never sent with requests.</p></div>`;
+  <a href="${esc(stockUrl)}" target="_blank" rel="noopener noreferrer">${valid?quoteResearchLink(e).label:'Open StockAnalysis.com ↗'}</a></div><p class="market-lookup-help" id="marketLookupHelp">Prices are external, may be delayed, and can be unavailable. Your journal notes are never sent with requests.</p></div>`;
 }
 function updateQuotePanel(){
   const e=current(),panel=$('quoteResult'),help=$('marketLookupHelp');if(!e||!panel)return;
   const symbol=e.ticker.trim().toUpperCase(),valid=isTicker(symbol)&&!!symbol;
   const hasQuote=valid&&e.lastPriceSymbol===symbol&&Number.isFinite(e.lastPrice)&&e.lastPrice>0;
-  panel.innerHTML=`<div><strong>${hasQuote?esc(amountText(e.lastPrice,e.lastPriceCurrency)):valid?'Price not loaded':'Search a ticker or company name'}</strong><small>${hasQuote?`Last reported ${esc(dateLabel(e.lastPriceAt))} · ${esc(e.lastPriceCurrency||'USD')} · may be delayed`:valid?'Fetching quote when available':'Enter a company name or symbol above to see matches'}</small></div><a href="${esc(valid?stockAnalysisUrl(symbol,e.instrumentType):'https://stockanalysis.com/')}" target="_blank" rel="noopener noreferrer">${valid?'StockAnalysis.com ↗':'Open StockAnalysis.com ↗'}</a>`;
+  panel.innerHTML=`<div><strong>${hasQuote?esc(amountText(e.lastPrice,e.lastPriceCurrency)):valid?'Price not loaded':'Search a ticker or company name'}</strong><small>${hasQuote?`Last reported ${esc(dateLabel(e.lastPriceAt))} · ${esc(e.lastPriceCurrency||'USD')} · may be delayed`:valid?'Fetching quote when available':'Enter a company name or symbol above to see matches'}</small></div><a href="${esc(valid?quoteResearchLink(e).url:'https://stockanalysis.com/')}" target="_blank" rel="noopener noreferrer">${valid?quoteResearchLink(e).label:'Open StockAnalysis.com ↗'}</a>`;
   const btn=$('refreshQuoteButton');if(btn)btn.disabled=!valid;
   if(help && !help.dataset.error)help.textContent='Prices are external, may be delayed, and can be unavailable. Your journal notes are never sent with requests.';
 }
@@ -454,10 +574,11 @@ async function loadQuote(symbol,eid,force=false){
   quoteAttempts.set(key,Date.now());
   if(quoteController)quoteController.abort();quoteController=new AbortController();
   try{
-    const url='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(symbol)+'?range=1d&interval=1d';
+    const feed=(e.strategy==='day'?dayIndexMeta[symbol]?.feed:null)||symbol;
+    const url='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(feed)+'?range=1d&interval=1d';
     const data=await fetchJsonMarket(url,quoteController),meta=data?.chart?.result?.[0]?.meta;
     if(!meta||!Number.isFinite(Number(meta.regularMarketPrice))||Number(meta.regularMarketPrice)<=0)throw Error('No valid last price');
-    const quote={symbol:(meta.symbol||symbol).toUpperCase(),name:meta.longName||meta.shortName||'',price:Number(meta.regularMarketPrice),currency:meta.currency||'USD',asOf:Number(meta.regularMarketTime)>0?new Date(meta.regularMarketTime*1000).toISOString():isoNow(),type:meta.instrumentType||'EQUITY'};
+    const quote={symbol:symbol,name:(e.strategy==='day'?dayIndexMeta[symbol]?.title:null)||meta.longName||meta.shortName||'',price:Number(meta.regularMarketPrice),currency:meta.currency||'USD',asOf:Number(meta.regularMarketTime)>0?new Date(meta.regularMarketTime*1000).toISOString():isoNow(),type:meta.instrumentType||'EQUITY'};
     quoteCache.set(key,{quote,at:Date.now()});applyQuote(quote,eid);
   }catch(err){if(err.name!=='AbortError' && eid===current()?.id){setLookupHelp('Quote unavailable or delayed. Your ticker and research are still saved; try Refresh price or open StockAnalysis.com.',true);updateQuotePanel();}}
 }
@@ -495,20 +616,20 @@ function planLookup(target){
 function renderEditor(openOverride){
   const el=$('editorPanel');const e=current();
   if(!e){el.innerHTML='<div class="blank-editor"><div class="blank-icon">↗</div><h3>Start with a thesis.</h3><p class="muted">Create an analysis, collect evidence as you research, and come back to see how your thinking evolved.</p><button type="button" class="btn btn-primary" id="emptyNewButton">+ New analysis</button></div>';return;}
-  const opened=openOverride ?? new Set([STAGES[0].key]);
+  const opened=openOverride ?? new Set([stageList(e)[0].key]);
   const m=metrics(e);
   const snapshots=[...e.snapshots].sort((a,b)=>b.at.localeCompare(a.at));
   const logs=[...e.logs].sort((a,b)=>b.at.localeCompare(a.at));
   el.innerHTML=`
     <div class="editor-top"><div><p class="section-overline">INVESTMENT RESEARCH / ${esc(STRATEGIES[e.strategy].name.toUpperCase())}</p><h3>${esc(e.ticker.trim().toUpperCase()||'Untitled analysis')}${e.company?` <span class="muted">· ${esc(e.company)}</span>`:''}</h3><div class="editor-heading-meta"><span class="status-pill ${esc(e.status)}">${esc(e.status)}</span><span class="muted small">Updated ${dateLabel(e.updatedAt)}</span></div></div><div class="editor-actions"><button type="button" class="btn btn-secondary small-btn" id="snapshotButton">Save snapshot</button><button type="button" class="btn btn-danger small-btn" id="deleteButton">Delete</button></div></div>
     <section class="section-block"><div class="section-header"><h4>01 · Research idea</h4><span class="section-tag">AUTOSAVED</span></div><div class="form-grid">${field('Ticker / symbol','ticker',e.ticker)}${field('Company / asset','company',e.company)}${field('Idea / setup name','setup',e.setup)}${selectField('Research status','status',e.status,STATUSES)}</div>${quotePanelMarkup(e)}</section>
-    <section class="section-block"><div class="section-header"><div><h4>02 · Five-step investment framework</h4><p>Check your evidence, enter the data, and assess the weight of your findings.</p></div></div>
-      <div class="progress-section"><div class="progress-top"><span>Research checklist progress</span><strong id="progressPercent">${m.pct}%</strong></div><div class="progress-line"><div style="width:${m.pct}%" id="progressBar"></div></div><div class="progress-note" id="progressNote">${m.done} of ${m.total} prompts checked · ${m.rated} of ${e.stages.options.rating==='na'?'4':'5'} stages scored. Completion is not a buy signal.</div><div id="overallSignal">${meterMarkup(allSignals(e),true)}</div></div>
-      <div class="stage-list">${STAGES.map((s,i)=>stageMarkup(e,s,i,opened.has(s.key))).join('')}</div></section>
+    <section class="section-block"><div class="section-header"><div><h4>02 · ${e.strategy==='day'?'Five-stage intraday framework':'Five-step investment framework'}</h4><p>${e.strategy==='day'?'Readings show directional bias, not automatic entry approval. Record three intraday observations per checked marker.':'Check your evidence, enter the data, and assess the weight of your findings.'}</p></div></div>
+      <div class="progress-section"><div class="progress-top"><span>Research checklist progress</span><strong id="progressPercent">${m.pct}%</strong></div><div class="progress-line"><div style="width:${m.pct}%" id="progressBar"></div></div><div class="progress-note" id="progressNote">${m.done} of ${m.total} prompts checked · ${m.rated} of ${stageList(e).length-(e.stages.options?.rating==='na'?1:0)} stages scored. Completion is not a buy signal.</div><div id="overallSignal">${meterMarkup(allSignals(e),true)}</div></div>
+      ${e.strategy==='day'?'<div class="day-trade-focus"><strong>Enter only if the reward justifies the risk.</strong><p>For Calls, a bullish directional score may support the thesis; for Puts, a bearish score may support it. Neither implies positive expectancy. All markets and options inputs are manual; price lookup may be delayed.</p></div>':''}<div class="stage-list">${stageList(e).map((s,i)=>stageMarkup(e,s,i,opened.has(s.key))).join('')}</div></section>
     <section class="section-block"><div class="section-header"><div><h4>03 · Thesis &amp; decision</h4><p>Separate your analysis from your intended action.</p></div></div>
       <div class="form-grid">${textArea('My investment thesis','thesis',e.thesis,'Why this company, why this direction, and why now?')}${textArea('What would invalidate my thesis?','invalidationReason',e.invalidationReason,'Specify what would make you change your mind.')}${selectField('Current decision','decision',e.decision,DECISIONS)}</div>
-      <div class="form-grid three" style="margin-top:12px">${field('Entry / purchase price','entryPrice',e.entryPrice)}${field('Target price','targetPrice',e.targetPrice)}${field('Invalidation / stop price','stopPrice',e.stopPrice)}${field('Capital at risk / allocated','capital',e.capital)}${e.strategy==='leaps'?'':field('Number of shares / units','quantity',e.quantity)}${dateField('Position opened','openedDate',e.openedDate)}${dateField('Position closed','closedDate',e.closedDate)}${field('Exit / sale price','exitPrice',e.exitPrice)}</div><p class="outcome-note" id="riskRewardText">${esc(riskReward(e))}</p><p class="outcome-note" id="realizedText">${esc(outcomeText(e))}</p></section>
-    <section class="section-block"><div class="section-header"><h4>04 · ${e.strategy==='leaps'?'LEAPS contract details':e.strategy==='swings'?'Swing setup':'Long-term portfolio plan'}</h4></div>${extraFields(e)}</section>
+      <div class="form-grid three" style="margin-top:12px">${field(e.strategy==='day'?'Underlying entry level':'Entry / purchase price','entryPrice',e.entryPrice)}${field(e.strategy==='day'?'Underlying price target':'Target price','targetPrice',e.targetPrice)}${field(e.strategy==='day'?'Underlying invalidation level':'Invalidation / stop price','stopPrice',e.stopPrice)}${field('Capital at risk / allocated','capital',e.capital)}${['leaps','day'].includes(e.strategy)?'':field('Number of shares / units','quantity',e.quantity)}${dateField('Position opened','openedDate',e.openedDate)}${dateField('Position closed','closedDate',e.closedDate)}${field('Exit / sale price','exitPrice',e.exitPrice)}</div><p class="outcome-note" id="riskRewardText">${esc(riskReward(e))}</p><p class="outcome-note" id="realizedText">${esc(outcomeText(e))}</p></section>
+    <section class="section-block"><div class="section-header"><h4>04 · ${e.strategy==='day'?'Day trade contract &amp; Greeks':e.strategy==='leaps'?'LEAPS contract details':e.strategy==='swings'?'Swing setup':'Long-term portfolio plan'}</h4></div>${extraFields(e)}</section>
     <section class="section-block"><div class="section-header"><h4>05 · Lessons &amp; follow-up</h4></div><div class="form-grid">${textArea('What did I learn / what would I do differently?','lesson',e.lesson,'What was right, wrong, missed, or worth repeating?')}</div></section>
     <section class="section-block"><div class="section-header"><div><h4>06 · Timestamped research log</h4><p>Add updates as new data appears. These notes are kept in order.</p></div><span class="section-tag">${e.logs.length} UPDATES</span></div>
       <div class="journal-note-form"><label class="visually-hidden" for="journalUpdate">Research update</label><textarea id="journalUpdate" placeholder="Example: Nov 18 — CPI softened, but sector breadth remains weak. Keeping thesis neutral."></textarea><div class="note-submit"><span class="hint-text">Updates are permanent within this entry until you delete the entire analysis.</span><button class="btn btn-secondary small-btn" type="button" id="addLogButton">+ Add dated update</button></div></div>
@@ -543,7 +664,7 @@ function showSnapshot(id){
   const e=current(),s=e?.snapshots.find(x=>x.id===id);if(!s)return;app.snapshotId=id;
   const x=s.data;
   $('snapshotModalTitle').textContent=`${x.ticker?.toUpperCase()||'Untitled'} · ${dateLabel(s.at)}`;
-  $('snapshotContent').innerHTML=`<div class="snapshot-section"><h4>Decision &amp; thesis</h4><p>Status: ${esc(x.status)} · Decision: ${esc(x.decision)}</p><p>${esc(x.thesis||'No thesis recorded')}</p><p>Invalidation: ${esc(x.invalidationReason||'Not recorded')}</p></div>${STAGES.map(st=>{const v=x.stages[st.key];const observations=v.data.map(d=>`${d.metric}: ${d.value}${d.source?` (${d.source})`:''}`).join('\n');const snapshotScore=stageSignal(x,st.key);return `<div class="snapshot-section"><h4>${esc(st.name)} · ${esc(snapshotScore.rating||'Insufficient readings')} · ${v.checks.filter(Boolean).length}/${st.checks.length} checked</h4><p>${esc(v.notes||'No analysis notes')}</p><p>${v.markers.map((m,i)=>v.checks[i]?`${m.name}: ${m.readings.join(' → ')} (${m.direction})`:'').filter(Boolean).map(esc).join('<br>')||'No numeric evidence saved'}</p>${observations?`<p>Data points:\n${esc(observations)}</p>`:''}</div>`;}).join('')}<div class="snapshot-section"><h4>Trade / contract record</h4><p>Entry: ${esc(x.entryPrice||'—')} · Target: ${esc(x.targetPrice||'—')} · Invalidation: ${esc(x.stopPrice||'—')}</p><p>Exit: ${esc(x.exitPrice||'—')} · Capital: ${esc(x.capital||'—')} · Shares: ${esc(x.quantity||'—')}</p>${x.strategy==='leaps'?`<p>${esc(x.optionType)} · Strike ${esc(x.strike||'—')} · Expiration ${esc(x.expiration||'—')} · Entry premium ${esc(x.premium||'—')} · Exit premium ${esc(x.exitPremium||'—')}</p>`:''}<p>Lessons: ${esc(x.lesson||'Not recorded')}</p></div>`;
+  $('snapshotContent').innerHTML=`<div class="snapshot-section"><h4>Decision &amp; thesis</h4><p>Status: ${esc(x.status)} · Decision: ${esc(x.decision)}</p><p>${esc(x.thesis||'No thesis recorded')}</p><p>Invalidation: ${esc(x.invalidationReason||'Not recorded')}</p></div>${stageList(x).map(st=>{const v=x.stages[st.key];const observations=v.data.map(d=>`${d.metric}: ${d.value}${d.source?` (${d.source})`:''}`).join('\n');const snapshotScore=stageSignal(x,st.key);return `<div class="snapshot-section"><h4>${esc(st.name)} · ${esc(snapshotScore.rating||'Insufficient readings')} · ${v.checks.filter(Boolean).length}/${st.checks.length} checked</h4><p>${esc(v.notes||'No analysis notes')}</p><p>${v.markers.map((m,i)=>v.checks[i]?`${m.name}: ${m.readings.join(' → ')} (${m.direction})`:'').filter(Boolean).map(esc).join('<br>')||'No numeric evidence saved'}</p>${observations?`<p>Data points:\n${esc(observations)}</p>`:''}</div>`;}).join('')}<div class="snapshot-section"><h4>Trade / contract record</h4><p>Entry: ${esc(x.entryPrice||'—')} · Target: ${esc(x.targetPrice||'—')} · Invalidation: ${esc(x.stopPrice||'—')}</p><p>Exit: ${esc(x.exitPrice||'—')} · Capital: ${esc(x.capital||'—')} · Shares: ${esc(x.quantity||'—')}</p>${['leaps','day'].includes(x.strategy)?`<p>${esc(x.optionType)} · Strike ${esc(x.strike||'—')} · Expiration ${esc(x.expiration||'—')} · Entry premium ${esc(x.premium||'—')} · Exit premium ${esc(x.exitPremium||'—')}</p>${x.strategy==='day'?`<p>Target premium ${esc(x.targetPremium||'—')} · Stop premium ${esc(x.stopPremium||'—')} · Delta ${esc(x.delta||'—')} · Gamma ${esc(x.gamma||'—')} · Theta ${esc(x.theta||'—')} · Vega ${esc(x.vega||'—')} · IV ${esc(x.ivPercent||'—')}%</p>`:''}`:''}<p>Lessons: ${esc(x.lesson||'Not recorded')}</p></div>`;
   $('snapshotDialog').showModal();
 }
 function restoreSnapshot(){
@@ -566,6 +687,8 @@ function updateField(target){
   if(key && Object.hasOwn(e,key)){
     e[key]=target.value;autosave();
     if(['entryPrice','targetPrice','stopPrice','direction','optionType'].includes(key))$('riskRewardText').textContent=riskReward(e);
+    if(e.strategy==='day' && ['premium','targetPremium','stopPremium','contracts','maxDailyLoss'].includes(key)){const box=$('dayPremiumRisk');if(box)box.textContent=dayPremiumRisk(e);}
+    if(e.strategy==='day' && ['bidPrice','askPrice'].includes(key)){const box=$('daySpreadNote');if(box)box.textContent=daySpreadSummary(e);}
     if(['entryPrice','exitPrice','quantity','premium','exitPremium','contracts','status','direction'].includes(key))$('realizedText').textContent=outcomeText(e);
     if(['ticker','company','status'].includes(key)){
       const title=document.querySelector('#editorPanel .editor-top h3');
@@ -658,5 +781,5 @@ function setupEvents(){
   window.addEventListener('pagehide',()=>{if(app.pending)persist();});
 }
 setupEvents();
-setStrategy('swings');
+setStrategy('day');
 setView('journal');
