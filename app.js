@@ -44,6 +44,85 @@ const MARKER_DEFS = {
     ['Options delta (signed)','choose']
   ]
 };
+
+// Indicator research shortcuts. Each list entry matches its stage's existing checklist and marker order.
+// Company pages use the journal ticker; economic sources do not require one.
+const RESEARCH_SOURCES = {
+  economic: [
+    {check:'https://www.bea.gov/data/gdp/gross-domestic-product',mark:'https://www.bea.gov/data/gdp/gross-domestic-product',name:'BEA GDP'},
+    {check:'https://www.bls.gov/news.release/cpi.htm',mark:'https://www.bea.gov/data/personal-consumption-expenditures-price-index',name:'BEA Core PCE'},
+    {check:'https://www.bls.gov/news.release/empsit.htm',mark:'https://fred.stlouisfed.org/series/UNRATE',name:'FRED / BLS Unemployment'},
+    {check:'https://fred.stlouisfed.org/series/T10Y2Y',mark:'https://fred.stlouisfed.org/series/T10Y2Y',name:'FRED 10Y–2Y Spread'},
+    {check:'https://www.ismworld.org/supply-management-news-and-reports/reports/ism-pmi-reports/',mark:'https://www.ismworld.org/supply-management-news-and-reports/reports/ism-pmi-reports/',name:'ISM PMI'}
+  ],
+  sector: [
+    {check:'https://finviz.com/groups?g=sector&v=140',mark:'https://finviz.com/groups?g=sector&v=140',name:'Finviz Sector Performance'},
+    {check:'https://finviz.com/groups?g=sector&v=140',mark:'https://stockcharts.com/freecharts/marketsummary.html',name:'StockCharts Sector Strength'},
+    {check:'https://stockcharts.com/freecharts/marketsummary.html',mark:'https://stockcharts.com/freecharts/marketsummary.html',name:'StockCharts Sector Trends'},
+    {check:'https://stockcharts.com/freecharts/marketsummary.html',mark:'https://stockcharts.com/freecharts/marketsummary.html',name:'StockCharts Sector Breadth'},
+    {check:'https://www.etf.com/etfanalytics/etf-fund-flows-tool',mark:'https://www.etf.com/etfanalytics/etf-fund-flows-tool',name:'ETF.com Fund Flows'}
+  ],
+  fundamentals: [
+    {check:'{financials}',mark:'{financials}',name:'StockAnalysis Financials'},
+    {check:'https://www.sec.gov/edgar/search/',mark:'{financials}',name:'StockAnalysis Earnings'},
+    {check:'{balance-sheet}',mark:'{cash-flow}',name:'StockAnalysis Cash Flow'},
+    {check:'{statistics}',mark:'{statistics}',name:'StockAnalysis Valuation'},
+    {check:'https://www.sec.gov/edgar/search/',mark:'{ratios}',name:'StockAnalysis ROIC / Ratios'}
+  ],
+  technical: [
+    {check:'{chart}',mark:'{technical}',name:'Barchart Technicals'},
+    {check:'{technical}',mark:'{technical}',name:'Barchart Moving Averages'},
+    {check:'{chart}',mark:'{technical}',name:'Barchart Technicals'},
+    {check:'{chart}',mark:'{chart}',name:'TradingView Chart'},
+    {check:'{chart}',mark:'{chart}',name:'TradingView Chart'},
+    {check:'{chart}',mark:'{chart}',name:'TradingView Price Chart'}
+  ],
+  options: [
+    {check:'{options-data}',mark:'{options-data}',name:'Barchart Options Data'},
+    {check:'{options-data}',mark:'{options-data}',name:'Barchart IV Rank'},
+    {check:'{options-data}',mark:'{options-data}',name:'Barchart Put/Call'},
+    {check:'{options-chain}',mark:'{options-flow}',name:'Barchart Options Flow'},
+    {check:'{options-greeks}',mark:'{options-greeks}',name:'Barchart Greeks'}
+  ]
+};
+function companyResearchUrl(token,entry){
+  const symbol=String(entry?.ticker||'').trim().toUpperCase();
+  const valid=/^[A-Z][A-Z0-9.\-]{0,11}$/.test(symbol);
+  if(token==='{chart}')return valid?`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`:'https://www.tradingview.com/chart/';
+  if(['{financials}','{balance-sheet}','{cash-flow}','{statistics}','{ratios}'].includes(token)){
+    if(!valid)return 'https://stockanalysis.com/stocks/';
+    const tail={'{financials}':'financials/','{balance-sheet}':'financials/balance-sheet/','{cash-flow}':'financials/cash-flow-statement/','{statistics}':'statistics/','{ratios}':'financials/ratios/'}[token];
+    return `https://stockanalysis.com/stocks/${symbol.toLowerCase()}/${tail}`;
+  }
+  const paths={'{technical}':'technical-analysis','{options-data}':'options-data','{options-flow}':'options-flow','{options-chain}':'options','{options-greeks}':'volatility-greeks'};
+  if(paths[token])return valid?`https://www.barchart.com/stocks/quotes/${encodeURIComponent(symbol)}/${paths[token]}`:'https://www.barchart.com/';
+  return token;
+}
+function researchSource(stage,index,kind,entry){
+  const source=RESEARCH_SOURCES[stage]?.[index];
+  if(!source)return null;
+  const marker=entry?.stages?.[stage]?.markers?.[index];
+  // Edited indicator names receive a clearly identified search instead of a misleading hardcoded source.
+  if(kind==='mark'&&marker&&marker.name.trim().toLowerCase()!==MARKER_DEFS[stage][index][0].toLowerCase()){
+    return {url:'https://www.google.com/search?q='+encodeURIComponent(`${marker.name} historical data source ${entry?.ticker||''}`),text:'Find source ↗',description:'Find a source for your customized indicator'};
+  }
+  const url=companyResearchUrl(source[kind],entry);
+  const description=kind==='check'&&stage==='economic'&&index===1?'BLS CPI data':kind==='check'&&stage==='fundamentals'&&index===1?'SEC company filings':source.name;
+  return {url,text:kind==='check'?'↗ Source':'Source ↗',description:description+' (opens in a new tab)'};
+}
+function researchLink(stage,index,kind,entry){
+  const src=researchSource(stage,index,kind,entry);
+  if(!src)return '';
+  return `<a class="indicator-source-link ${kind==='check'?'check-source':'marker-source'}" data-research-stage="${esc(stage)}" data-research-index="${index}" data-research-kind="${kind}" href="${esc(src.url)}" target="_blank" rel="noopener noreferrer" title="${esc(src.description)}" aria-label="${esc(src.description)}">${esc(src.text)}</a>`;
+}
+function updateResearchLinks(entry){
+  document.querySelectorAll('[data-research-stage][data-research-index][data-research-kind]').forEach(el=>{
+    const src=researchSource(el.dataset.researchStage,Number(el.dataset.researchIndex),el.dataset.researchKind,entry);
+    if(!src)return;
+    el.href=src.url;el.textContent=src.text;el.title=src.description;el.setAttribute('aria-label',src.description);
+  });
+}
+
 const MARKET_PROXY = 'https://proxy.cors.dev/';
 const quoteCache = new Map(), searchCache = new Map(), quoteAttempts = new Map();
 let quoteTimer=null, searchTimer=null, searchController=null, quoteController=null;
@@ -270,9 +349,9 @@ function stageMarkup(e,s,i,open){
       <p class="checklist-heading">Evidence checklist + last three readings</p><div class="evidence-metrics">${s.checks.map((c,j)=>{
         const m=st.markers[j],v=m.readings,score=st.checks[j]?markerSignal(m):null;
         return `<div class="evidence-metric ${st.checks[j]?'active':''}" data-marker-card="${s.key}-${j}">
-        <label class="evidence-check ${st.checks[j]?'checked':''}"><input type="checkbox" data-check-stage="${s.key}" data-check-index="${j}" ${st.checks[j]?'checked':''}/><span>${esc(c)}</span></label>
+        <div class="evidence-check-row"><label class="evidence-check ${st.checks[j]?'checked':''}"><input type="checkbox" data-check-stage="${s.key}" data-check-index="${j}" ${st.checks[j]?'checked':''}/><span>${esc(c)}</span></label>${researchLink(s.key,j,'check',e)}</div>
         <div class="marker-fields" data-marker-stage="${s.key}" data-marker-index="${j}">
-          <label class="marker-name-label">Indicator<input type="text" data-marker-input="name" value="${esc(m.name)}" maxlength="120" aria-label="Indicator name" /></label>
+          <div class="marker-name-wrap"><div class="marker-name-header"><span>Indicator</span>${researchLink(s.key,j,'mark',e)}</div><label class="marker-name-label"><span class="visually-hidden">Indicator name</span><input type="text" data-marker-input="name" value="${esc(m.name)}" maxlength="120" aria-label="Indicator name" /></label></div>
           <label class="marker-direction-label">Bullish interpretation<select data-marker-input="direction" aria-label="Which direction favors bullish">
             <option value="choose" ${m.direction==='choose'?'selected':''}>Choose direction</option><option value="up" ${m.direction==='up'?'selected':''}>Higher = bullish</option><option value="down" ${m.direction==='down'?'selected':''}>Lower = bullish</option>
           </select></label>
@@ -496,6 +575,7 @@ function updateField(target){
       renderList();
     }
     if(['ticker','company'].includes(key))planLookup(target);
+    if(key==='ticker')updateResearchLinks(e);
     return;
   }
   const markerEl=target.closest('[data-marker-stage][data-marker-index]');
@@ -503,7 +583,7 @@ function updateField(target){
     const stageKey=markerEl.dataset.markerStage,idx=Number(markerEl.dataset.markerIndex),st=e.stages[stageKey],m=st?.markers?.[idx];
     if(!m)return;
     if(target.dataset.markerInput==='reading'){m.readings[Number(target.dataset.readingIndex)]=target.value;}
-    if(target.dataset.markerInput==='name'){m.name=target.value;}
+    if(target.dataset.markerInput==='name'){m.name=target.value;updateResearchLinks(e);}
     if(target.dataset.markerInput==='direction'){m.direction=target.value;}
     syncStageRating(e,stageKey);autosave();redrawMeters();return;
   }
