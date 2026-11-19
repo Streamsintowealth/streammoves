@@ -43,3 +43,9 @@
 .stage-tag.pending{background:#f5f6f5;color:#8a978c;border-color:#e4ebe4}
 @media (max-width:740px){.ticker-suggestions button{grid-template-columns:60px minmax(0,1fr)}.ticker-suggestions small{grid-column:2}}
 @media (max-width:480px){.marker-fields{grid-template-columns:1fr}.marker-reading-grid{gap:5px}.marker-reading-grid input{padding:9px 5px;font-size:12px}.quote-result strong{font-size:20px}.signal-meter-head{align-items:start;flex-direction:column;gap:4px}}
+
+/* Official Streams Into Wealth logo in shared header; all three strategies. */
+.brand-emblem.brand-emblem-logo{width:96px;height:96px;min-width:96px;overflow:hidden;padding:0;border-radius:50%;background:#fff;border:2px solid #ebcf80;box-shadow:0 5px 21px #071c1744;display:flex;align-items:center;justify-content:center}
+.brand-emblem-logo img{width:100%;height:100%;display:block;object-fit:cover;border-radius:50%}
+@media(max-width:740px){.brand-emblem.brand-emblem-logo{width:66px;height:66px;min-width:66px;border-width:1px}.brand-lockup{gap:9px}}
+@media(max-width:480px){.brand-emblem.brand-emblem-logo{width:58px;height:58px;min-width:58px}.brand-lockup h1{font-size:23px}.brand-eyebrow{letter-spacing:1px;font-size:8px}}
