@@ -6,7 +6,6 @@
   <meta name="theme-color" content="#113d31" />
   <meta name="description" content="Stream Moves — a private, browser-based investment research and decision journal." />
   <title>Stream Moves | Investment Checklist Journal</title>
-  <link rel="icon" type="image/png" href="streammoves-official-s-logo.png" />
   <link rel="stylesheet" href="styles.css" />
   <script src="app.js" defer></script>
 </head>
@@ -16,8 +15,8 @@
       <div class="header-inner">
         <div class="brand-bar">
           <div class="brand-lockup">
-            <div class="brand-emblem brand-emblem-logo">
-              <img src="streammoves-official-s-logo.png" width="96" height="96" alt="Streams Into Wealth official green S logo" />
+            <div class="brand-emblem" aria-hidden="true">
+              <svg viewBox="0 0 36 36" fill="none" role="presentation"><path d="M7 27V19M15 27V14M23 27V10" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/><path d="M9 10l6-4 7 3 7-5" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </div>
             <div>
               <p class="brand-eyebrow">STREAMS INTO WEALTH</p>
@@ -43,10 +42,7 @@
           <p class="hero-side">Research first. Capital second.</p>
         </div>
         <nav class="strategy-tabs" id="strategyTabs" aria-label="Investment strategy">
-          <button class="strategy-tab active" type="button" data-strategy="day" aria-pressed="true">
-            <span class="tab-icon" aria-hidden="true">◷</span><span>DAY TRADING</span><span class="tab-count" data-count="day">0</span>
-          </button>
-          <button class="strategy-tab" type="button" data-strategy="swings" aria-pressed="false">
+          <button class="strategy-tab active" type="button" data-strategy="swings" aria-pressed="true">
             <span class="tab-icon" aria-hidden="true">↗</span><span>SWINGS</span><span class="tab-count" data-count="swings">0</span>
           </button>
           <button class="strategy-tab" type="button" data-strategy="leaps" aria-pressed="false">
@@ -55,16 +51,19 @@
           <button class="strategy-tab" type="button" data-strategy="long-term" aria-pressed="false">
             <span class="tab-icon" aria-hidden="true">▥</span><span>LONG TERM</span><span class="tab-count" data-count="long-term">0</span>
           </button>
+          <button class="strategy-tab" type="button" id="confluenceNavButton" data-confluence-nav aria-pressed="false">
+            <span class="tab-icon" aria-hidden="true">⇄</span><span>CALLS vs PUTS</span><span class="tab-count" id="confluenceTabCount">0</span>
+          </button>
         </nav>
       </div>
     </header>
 
     <main class="main-content">
-      <div class="welcome-row">
+      <div class="welcome-row" id="mainJournalHeader">
         <div>
-          <p class="section-overline" id="strategyEyebrow">0–1 DTE / INTRADAY RESEARCH WORKSPACE</p>
-          <h2 id="workspaceHeading">Your Day Trading Journal</h2>
-          <p class="muted" id="workspaceDescription">Research intraday price action, Greeks, implied volatility, and defined option-premium risk.</p>
+          <p class="section-overline" id="strategyEyebrow">SWING RESEARCH WORKSPACE</p>
+          <h2 id="workspaceHeading">Your Swing Journal</h2>
+          <p class="muted" id="workspaceDescription">Keep your market thesis, technical setup, and decisions together.</p>
         </div>
         <button type="button" class="btn btn-primary" id="newEntryButton"><span class="plus">+</span> New analysis</button>
       </div>
@@ -75,7 +74,7 @@
         <article class="stat-card"><span class="stat-label">Research updates</span><strong id="statUpdates">0</strong><span class="stat-foot">Notes + saved snapshots</span></article>
       </section>
 
-      <div class="view-switch-row">
+      <div class="view-switch-row" id="mainViewSwitch">
         <div class="view-switch" role="group" aria-label="Workspace view">
           <button class="view-option active" type="button" data-view="journal" aria-pressed="true">Research journal</button>
           <button class="view-option" type="button" data-view="history" aria-pressed="false">Analysis history</button>
@@ -99,11 +98,29 @@
         <div class="history-controls">
           <label class="search-box"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg><input id="historySearch" type="search" placeholder="Search all past analyses" aria-label="Search history"/></label>
           <label class="visually-hidden" for="historyScope">Filter history by strategy</label>
-          <select id="historyScope" class="filter-select"><option value="all">All four strategies</option><option value="day">Day trading</option><option value="swings">Swings</option><option value="leaps">LEAPS</option><option value="long-term">Long term</option></select>
+          <select id="historyScope" class="filter-select"><option value="all">All three strategies</option><option value="swings">Swings</option><option value="leaps">LEAPS</option><option value="long-term">Long term</option></select>
           <label class="visually-hidden" for="historyStatus">Filter history by status</label>
           <select id="historyStatus" class="filter-select"><option value="all">All statuses</option><option value="Researching">Researching</option><option value="Watching">Watching</option><option value="Open">Open</option><option value="Closed">Closed</option><option value="Avoided">Avoided</option></select>
         </div>
         <div id="historyResults" class="history-results"></div>
+      </section>
+      <section id="confluenceView" class="confluence-page hidden" aria-label="Calls versus puts confluence journal">
+        <div class="confluence-heading">
+          <div><p class="section-overline">OPTIONS CONFLUENCE WORKSPACE</p><h2>Calls vs Puts Confluence</h2><p class="muted">Compare six signals, document the evidence, and save each assessment to your history.</p></div>
+          <button type="button" class="btn btn-primary" id="newConfluenceButton">+ New confluence</button>
+        </div>
+        <div class="confluence-stat-grid">
+          <div class="stat-card"><span class="stat-label">Saved setups</span><strong id="confluenceTotal">0</strong><span class="stat-foot">In this browser</span></div>
+          <div class="stat-card"><span class="stat-label">Bullish aligned</span><strong id="confluenceBullCount">0</strong><span class="stat-foot">Latest assessment</span></div>
+          <div class="stat-card"><span class="stat-label">Bearish aligned</span><strong id="confluenceBearCount">0</strong><span class="stat-foot">Latest assessment</span></div>
+        </div>
+        <div class="confluence-layout">
+          <aside class="entry-sidebar confluence-sidebar"><div class="sidebar-title"><div><h3>My confluence research</h3><p id="confluenceSidebarCount" class="muted small">0 setups</p></div><button class="icon-button" id="confluenceSidebarAdd" type="button" aria-label="Create confluence analysis">+</button></div>
+            <label class="search-box"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg><input type="search" id="confluenceSearch" placeholder="Search ticker or thesis" aria-label="Search confluence entries" /></label>
+            <div class="entry-list" id="confluenceList"></div>
+          </aside>
+          <section class="editor-panel confluence-editor" id="confluenceEditor" aria-label="Options confluence checklist"></section>
+        </div>
       </section>
       <footer class="footer-note"><span>STREAM MOVES <span class="footer-gold">/</span> STREAMS INTO WEALTH</span><span>Private browser storage · Export backups regularly · Not a brokerage or live-data feed</span></footer>
     </main>
