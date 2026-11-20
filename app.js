@@ -316,12 +316,15 @@ const app={entries:loadEntries(),strategy:'day',selectedId:null,view:'journal',p
 
 function blankConfluence(){
   const now=isoNow();
-  return {id:makeId(),ticker:'',company:'',timeframe:'4H',expiry:'',setup:'',decision:'Wait',thesis:'',risk:'',reviewNotes:'',signals:Object.fromEntries(CONFLUENCE_SIGNALS.map(x=>[x.key,{side:'',value:'',source:'',notes:''}])),history:[],createdAt:now,updatedAt:now};
+  return {id:makeId(),ticker:'',company:'',lastPrice:null,lastPriceSymbol:'',lastPriceCurrency:'USD',lastPriceAt:'',instrumentType:'EQUITY',quoteVolume:null,quoteChangePct:null,timeframe:'4H',expiry:'',setup:'',decision:'Wait',thesis:'',risk:'',reviewNotes:'',signals:Object.fromEntries(CONFLUENCE_SIGNALS.map(x=>[x.key,{side:'',value:'',source:'',notes:''}])),history:[],createdAt:now,updatedAt:now};
 }
 function normalizeConfluence(raw){
   if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('Invalid confluence entry');
   const e=blankConfluence();
-  for(const k of ['ticker','company','expiry','setup','thesis','risk','reviewNotes']) e[k]=plain(raw[k], k==='ticker'?30:12000);
+  for(const k of ['ticker','company','expiry','setup','thesis','risk','reviewNotes','lastPriceSymbol','lastPriceCurrency','lastPriceAt','instrumentType']) e[k]=plain(raw[k], k==='ticker'?30:12000);
+  e.lastPrice=raw.lastPrice!==null&&raw.lastPrice!==undefined&&Number.isFinite(Number(raw.lastPrice))&&Number(raw.lastPrice)>0?Number(raw.lastPrice):null;
+  e.quoteVolume=raw.quoteVolume!==null&&raw.quoteVolume!==undefined&&Number.isFinite(Number(raw.quoteVolume))&&Number(raw.quoteVolume)>=0?Number(raw.quoteVolume):null;
+  e.quoteChangePct=raw.quoteChangePct!==null&&raw.quoteChangePct!==undefined&&Number.isFinite(Number(raw.quoteChangePct))?Number(raw.quoteChangePct):null;
   e.id=plain(raw.id,128)||makeId();
   e.timeframe=['1H','4H','Daily','Weekly','Other'].includes(raw.timeframe)?raw.timeframe:'4H';
   e.decision=['Wait','Consider Call','Consider Put','Avoid'].includes(raw.decision)?raw.decision:'Wait';
@@ -442,7 +445,7 @@ function refreshSummary(){
 }
 function setStrategy(strategy){
   if(!Object.hasOwn(STRATEGIES,strategy))return;
-  persist();cf.active=false;
+  persist();cf.active=false;cfCancelLookup();
   for(const id of ['mainJournalHeader','statGrid','mainViewSwitch'])$(id).classList.remove('hidden');
   $('confluenceView').classList.add('hidden');$('confluenceNavButton').classList.remove('active');$('confluenceNavButton').setAttribute('aria-pressed','false');
   persist();app.strategy=strategy;app.selectedId=app.entries.filter(e=>e.strategy===strategy).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))[0]?.id??null;
@@ -799,6 +802,105 @@ function confluenceScores(signals){
 }
 function cfCurrent(){return cf.entries.find(x=>x.id===cf.selectedId)||null;}
 function confluenceVerdict(result){return result==='call'?'BULLISH CALL CONFLUENCE':result==='put'?'BEARISH PUT CONFLUENCE':'WAIT · NO CLEAR CONFLUENCE';}
+// Confluence lookup uses the exact same Yahoo search/quote service and cache as the four journals.
+// It is separate from the main editor to avoid cross-page suggestions or stale results.
+let cfSearchTimer=null,cfQuoteTimer=null,cfSearchController=null,cfQuoteController=null;
+let cfSuggestions=[],cfSuggestionEntryId=null;
+function confluenceQuoteMarkup(entry){
+  const symbol=entry.ticker.trim().toUpperCase(),valid=isTicker(symbol)&&!!symbol;
+  const hasQuote=valid&&entry.lastPriceSymbol===symbol&&Number.isFinite(entry.lastPrice)&&entry.lastPrice>0;
+  const research=quoteResearchLink({...entry,strategy:'day'});
+  const meta=hasQuote?`Last reported ${esc(dateLabel(entry.lastPriceAt))} · ${esc(entry.lastPriceCurrency||'USD')} · may be delayed`:'Prices may be delayed or unavailable';
+  const change=hasQuote&&Number.isFinite(entry.quoteChangePct)?`Session change: ${entry.quoteChangePct>=0?'+':''}${entry.quoteChangePct.toFixed(2)}%`:'';
+  const vol=hasQuote&&Number.isFinite(entry.quoteVolume)?`Reported share/index volume: ${Math.round(entry.quoteVolume).toLocaleString()}`:'';
+  const extra=[change,vol].filter(Boolean).join(' · ');
+  return `<div class="market-lookup"><div class="market-lookup-top"><strong>Company lookup &amp; last reported market price</strong><button class="btn btn-secondary small-btn" type="button" id="cfRefreshQuote" ${valid?'':'disabled'}>Refresh price</button></div>
+    <div id="cfTickerSuggestions" class="ticker-suggestions hidden" role="listbox" aria-label="Matching companies for confluence"></div>
+    <div id="cfQuoteResult" class="quote-result"><div><strong>${hasQuote?esc(amountText(entry.lastPrice,entry.lastPriceCurrency)):valid?'Price not loaded':'Search a ticker or company name'}</strong><small>${hasQuote?meta:valid?'Fetching when available':'Enter a company name or symbol above'}</small>${extra?`<small>${extra}</small>`:''}</div><a href="${esc(valid?research.url:'https://stockanalysis.com/')}" target="_blank" rel="noopener noreferrer">${valid?research.label:'Open StockAnalysis.com ↗'}</a></div>
+    <p id="cfLookupHelp" class="market-lookup-help">Search a company name or ticker to auto-fill its symbol, name, and available quote. Options OI, flow, IV, candlesticks and directional confirmation still require your own evidence.</p>
+  </div>`;
+}
+function cfQuoteRefresh(){
+  const e=cfCurrent(),result=$('cfQuoteResult'),originalHelp=$('cfLookupHelp');if(!e||!result)return;
+  const block=document.createElement('div');block.innerHTML=confluenceQuoteMarkup(e);
+  const next=block.querySelector('#cfQuoteResult');if(next)result.innerHTML=next.innerHTML;
+  const btn=$('cfRefreshQuote');if(btn)btn.disabled=!isTicker(e.ticker.trim())||!e.ticker.trim();
+  if(originalHelp&&!originalHelp.dataset.error)originalHelp.textContent='Quotes may be delayed. Six confluence signals are never automatically marked bullish or bearish.';
+  // Signal-specific links are refreshed when a symbol changes, without re-rendering text inputs.
+  const signalMarkup=CONFLUENCE_SIGNALS.map(d=>({d,area:$('confluenceEditor')?.querySelector(`[data-cf-signal-section="${d.key}"] .cf-source-links`)}));
+  for(const {d,area} of signalMarkup)if(area)area.innerHTML=confluenceSourceLinks(d,e);
+}
+function cfLookupHelp(message,isError=false){const el=$('cfLookupHelp');if(!el)return;el.textContent=message;el.dataset.error=isError?'true':'';el.classList.toggle('market-error',isError);}
+function cfClearSuggestions(){const el=$('cfTickerSuggestions');if(el){el.innerHTML='';el.classList.add('hidden');}cfSuggestions=[];cfSuggestionEntryId=null;}
+function cfShowSuggestions(items,eid){
+  if(!cf.active||cfCurrent()?.id!==eid)return;
+  const box=$('cfTickerSuggestions');if(!box)return;
+  cfSuggestions=items;cfSuggestionEntryId=eid;
+  if(!items.length){cfClearSuggestions();return;}
+  box.innerHTML=items.map((x,i)=>`<button type="button" data-cf-select-company="${i}" role="option"><strong>${esc(x.symbol)}</strong><span>${esc(x.name||x.symbol)}</span><small>${esc(x.exchange||x.type||'')}</small></button>`).join('');
+  box.classList.remove('hidden');
+}
+async function cfLookupCompanies(query,eid){
+  const q=query.trim();if(q.length<2||!cf.active||cfCurrent()?.id!==eid)return;
+  cfSearchController?.abort();cfSearchController=new AbortController();
+  try{
+    const key=q.toLowerCase(),cached=searchCache.get(key);let items;
+    if(cached&&Date.now()-cached.at<600000)items=cached.items;
+    else{
+      const data=await fetchJsonMarket('https://query1.finance.yahoo.com/v1/finance/search?quotesCount=8&newsCount=0&q='+encodeURIComponent(q),cfSearchController);
+      items=(data.quotes||[]).filter(x=>['EQUITY','ETF','INDEX'].includes(x.quoteType)&&isTicker(x.symbol))
+        .slice(0,8).map(x=>({symbol:x.symbol.toUpperCase().replace(/^\^(GSPC|NDX|VIX|RUT)$/,(m,id)=>({GSPC:'SPX',NDX:'NDX',VIX:'VIX',RUT:'RUT'}[id])),name:x.longname||x.shortname||x.symbol,exchange:x.exchDisp||x.exchange||'',type:x.quoteType}));
+      searchCache.set(key,{items,at:Date.now()});
+    }
+    if(cf.active&&cfCurrent()?.id===eid){cfShowSuggestions(items,eid);if(!items.length)cfLookupHelp('No matching company found. Try a symbol directly or refresh later.',true);}
+  }catch(err){if(err.name!=='AbortError'&&cf.active&&cfCurrent()?.id===eid)cfLookupHelp('Company search unavailable. Enter a ticker manually and refresh its quote.',true);}
+}
+async function cfLoadQuote(symbol,eid,force=false){
+  symbol=String(symbol||'').trim().toUpperCase();if(!isTicker(symbol)||!cf.active||cfCurrent()?.id!==eid)return;
+  const e=cfCurrent();if(e.ticker.trim().toUpperCase()!==symbol)return;
+  const cached=quoteCache.get(symbol);
+  if(!force&&cached&&Date.now()-cached.at<300000&&('volume' in cached.quote||'changePct' in cached.quote)){cfApplyQuote(cached.quote,eid);return;}
+  cfQuoteController?.abort();cfQuoteController=new AbortController();
+  try{
+    const feed=dayIndexMeta[symbol]?.feed||symbol;
+    const data=await fetchJsonMarket('https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(feed)+'?range=1d&interval=1d',cfQuoteController);
+    const meta=data?.chart?.result?.[0]?.meta;
+    if(!meta||!Number.isFinite(Number(meta.regularMarketPrice))||Number(meta.regularMarketPrice)<=0)throw Error('No valid quote');
+    const prev=Number(meta.chartPreviousClose??meta.previousClose);
+    const quote={symbol,name:dayIndexMeta[symbol]?.title||meta.longName||meta.shortName||'',price:Number(meta.regularMarketPrice),currency:meta.currency||'USD',asOf:Number(meta.regularMarketTime)>0?new Date(meta.regularMarketTime*1000).toISOString():isoNow(),type:meta.instrumentType||'EQUITY',volume:Number.isFinite(Number(meta.regularMarketVolume))?Number(meta.regularMarketVolume):null,changePct:Number.isFinite(prev)&&prev>0?(Number(meta.regularMarketPrice)-prev)/prev*100:null};
+    quoteCache.set(symbol,{quote,at:Date.now()});cfApplyQuote(quote,eid);
+  }catch(err){if(err.name!=='AbortError'&&cf.active&&cfCurrent()?.id===eid){cfLookupHelp('Quote unavailable or delayed. Your ticker and research remain saved; try Refresh price or open a linked source.',true);cfQuoteRefresh();}}
+}
+function cfApplyQuote(q,eid){
+  const e=cfCurrent();if(!e||!cf.active||e.id!==eid||e.ticker.trim().toUpperCase()!==q.symbol)return;
+  e.lastPrice=q.price;e.lastPriceCurrency=q.currency||'USD';e.lastPriceSymbol=q.symbol;e.lastPriceAt=q.asOf;
+  e.instrumentType=q.type||'EQUITY';e.quoteVolume=q.volume??null;e.quoteChangePct=q.changePct??null;
+  if(q.name){e.company=q.name;const input=$('cf-company');if(input&&document.activeElement!==input)input.value=q.name;}
+  const heading=$('confluenceEditor')?.querySelector('.editor-top h3');if(heading)heading.innerHTML=`${esc(e.ticker.toUpperCase())}${e.company?` <span class="muted">· ${esc(e.company)}</span>`:''}`;
+  cfLookupHelp('Quote retrieved from the market-data service; it may be delayed. Review option activity and technical evidence separately.');
+  cfQuoteRefresh();scheduleConfluenceSave();refreshConfluenceSidebar();
+}
+function cfSelectCompany(index){
+  const e=cfCurrent(),item=cfSuggestions[index];if(!e||!item||cfSuggestionEntryId!==e.id)return;
+  e.ticker=item.symbol;e.company=item.name;e.instrumentType=item.type;e.lastPrice=null;e.lastPriceSymbol='';e.lastPriceAt='';e.quoteVolume=null;e.quoteChangePct=null;
+  const ticker=$('cf-ticker'),company=$('cf-company');if(ticker)ticker.value=item.symbol;if(company)company.value=item.name;
+  cfClearSuggestions();cfQuoteRefresh();scheduleConfluenceSave();refreshConfluenceSidebar();
+  const heading=$('confluenceEditor')?.querySelector('.editor-top h3');if(heading)heading.innerHTML=`${esc(e.ticker)} <span class="muted">· ${esc(e.company)}</span>`;
+  cfLoadQuote(e.ticker,e.id,true);
+}
+function cfPlanLookup(target){
+  const e=cfCurrent();if(!e)return;
+  clearTimeout(cfSearchTimer);clearTimeout(cfQuoteTimer);cfSearchController?.abort();cfQuoteController?.abort();
+  const q=target.value.trim(),id=e.id;
+  if(target.dataset.cfEntry==='ticker'){
+    if(e.ticker.trim().toUpperCase()!==e.lastPriceSymbol){e.lastPriceSymbol='';e.quoteVolume=null;e.quoteChangePct=null;}
+    if(!q){cfClearSuggestions();cfQuoteRefresh();return;}
+    if(isTicker(q))cfQuoteTimer=setTimeout(()=>cfLoadQuote(q,id),650);
+  }
+  if(q.length>=2)cfSearchTimer=setTimeout(()=>cfLookupCompanies(q,id),400);else cfClearSuggestions();
+  cfQuoteRefresh();
+}
+function cfCancelLookup(){clearTimeout(cfSearchTimer);clearTimeout(cfQuoteTimer);cfSearchController?.abort();cfQuoteController?.abort();cfClearSuggestions();}
 function showConfluence(){
   persist();cf.active=true;
   document.querySelectorAll('[data-strategy]').forEach(b=>{b.classList.remove('active');b.setAttribute('aria-pressed','false');});
@@ -831,13 +933,17 @@ function confluenceSourceLinks(def,e){
   const linkHtml=def.links.map(([label,url])=>`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)} ↗</a>`).join('');
   const t=e.ticker.trim().toUpperCase();
   const symbol=/^[A-Z0-9.^-]{1,16}$/.test(t)?t:'';
-  const tickerLink=symbol?`<a href="https://finance.yahoo.com/quote/${encodeURIComponent(symbol)}/options/" target="_blank" rel="noopener noreferrer">${esc(symbol)} option chain ↗</a>`:'';
+  const index=dayIndexMeta[symbol];
+  const dataLink=index?`https://www.cboe.com/data/quotes/${encodeURIComponent(symbol)}/options`:`https://finance.yahoo.com/quote/${encodeURIComponent(symbol)}/options/`;
+  const chartLink=index?.url||`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`;
+  const chartSignal=['structure','candles','volume'].includes(def.key);
+  const tickerLink=symbol?`<a href="${esc(chartSignal?chartLink:dataLink)}" target="_blank" rel="noopener noreferrer">${esc(symbol)} ${chartSignal?'live chart':'option chain'} ↗</a>`:'';
   const own=safeUrl(e.signals[def.key].source);
   return `<div class="cf-source-links">${tickerLink}${linkHtml}${own?`<a class="cf-your-source" href="${esc(own)}" target="_blank" rel="noopener noreferrer">Your saved source ↗</a>`:''}</div>`;
 }
 function confluenceSignalMarkup(def,e,i){
   const data=e.signals[def.key],side=data.side;
-  return `<article class="cf-signal">
+  return `<article class="cf-signal" data-cf-signal-section="${def.key}">
     <div class="cf-signal-title"><span class="cf-signal-number">0${i+1}</span><div><h4>${esc(def.name)}</h4><p>${esc(def.hint)}</p></div><span class="cf-signal-state ${esc(side||'none')}">${side==='call'?'CALL ✓':side==='put'?'PUT ✓':side==='mixed'?'MIXED':'NOT CHECKED'}</span></div>
     <div class="cf-signal-compare"><div class="cf-side cf-side-call"><strong>CALLS · BULLISH</strong><p>${esc(def.call)}</p></div><div class="cf-side cf-side-put"><strong>PUTS · BEARISH</strong><p>${esc(def.put)}</p></div></div>
     <div class="cf-controls" role="group" aria-label="${esc(def.name)} confluence direction">
@@ -851,10 +957,12 @@ function renderConfluenceEditor(){
   const panel=$('confluenceEditor'),e=cfCurrent();
   if(!e){panel.innerHTML='<div class="blank-editor"><div class="blank-icon">⇄</div><h3>Build your options confluence.</h3><p class="muted">Use the six signals to evaluate whether a call, a put, or no trade has stronger support. All inputs are manual.</p><button class="btn btn-primary" type="button" id="emptyConfluenceButton">+ New confluence assessment</button></div>';return;}
   const s=confluenceScores(e.signals);const pctCall=(s.call/6*100).toFixed(0),pctPut=(s.put/6*100).toFixed(0);
+  cfCancelLookup();
   panel.innerHTML=`
     <div class="editor-top"><div><p class="section-overline">OPTIONS FLOW / PRICE STRUCTURE</p><h3>${esc(e.ticker.toUpperCase()||'Untitled confluence')}${e.company?` <span class="muted">· ${esc(e.company)}</span>`:''}</h3><p class="muted small">Last edited ${dateLabel(e.updatedAt)} · Autosaved in this browser</p></div><div class="editor-actions"><button type="button" class="btn btn-secondary small-btn" id="saveConfluenceAssessment">Save dated assessment</button><button type="button" class="btn btn-danger small-btn" id="deleteConfluenceEntry">Delete</button></div></div>
     <section class="section-block"><div class="section-header"><h4>01 · Contract / market setup</h4><span class="section-tag">RESEARCH</span></div>
-    <div class="form-grid three"><div class="field"><label for="cf-ticker">Ticker / symbol</label><input id="cf-ticker" data-cf-entry="ticker" value="${esc(e.ticker)}" maxlength="30" placeholder="NDX, SPX, GOOGL..."/></div><div class="field"><label>Company / asset</label><input data-cf-entry="company" value="${esc(e.company)}" maxlength="12000" placeholder="Optional"/></div><div class="field"><label>Chart timeframe</label><select data-cf-entry="timeframe">${optionMarkup(['1H','4H','Daily','Weekly','Other'],e.timeframe)}</select></div><div class="field"><label>Expiration being reviewed</label><input type="date" data-cf-entry="expiry" value="${esc(e.expiry)}"/></div><div class="field full"><label>Setup / scenario</label><input data-cf-entry="setup" value="${esc(e.setup)}" placeholder="Liquidity sweep, bullish break, bearish continuation..." maxlength="12000"/></div></div>
+    <div class="form-grid three"><div class="field"><label for="cf-ticker">Ticker / company search</label><input id="cf-ticker" data-cf-entry="ticker" value="${esc(e.ticker)}" maxlength="30" placeholder="Type GOOGL or Alphabet..." autocomplete="off"/></div><div class="field"><label for="cf-company">Company / asset</label><input id="cf-company" data-cf-entry="company" value="${esc(e.company)}" maxlength="12000" placeholder="Auto-fills after lookup" autocomplete="off"/></div><div class="field"><label>Chart timeframe</label><select data-cf-entry="timeframe">${optionMarkup(['1H','4H','Daily','Weekly','Other'],e.timeframe)}</select></div><div class="field"><label>Expiration being reviewed</label><input type="date" data-cf-entry="expiry" value="${esc(e.expiry)}"/></div><div class="field full"><label>Setup / scenario</label><input data-cf-entry="setup" value="${esc(e.setup)}" placeholder="Liquidity sweep, bullish break, bearish continuation..." maxlength="12000"/></div></div>
+    ${confluenceQuoteMarkup(e)}
     </section>
     <section class="section-block"><div class="section-header"><div><h4>02 · Calls vs puts confluence score</h4><p>Choose the side supported by each signal, then record the observed data below.</p></div></div>
       <div class="cf-score-grid"><div class="cf-score cf-score-call"><span>CALLS · BULLISH</span><strong>${s.call}<small>/ 6</small></strong><div class="cf-meter"><div style="width:${pctCall}%"></div></div></div><div class="cf-score-center ${s.result}"><span>Current assessment</span><strong>${confluenceVerdict(s.result)}</strong><small>${s.assessed}/6 reviewed · ${s.mixed} mixed</small></div><div class="cf-score cf-score-put"><span>PUTS · BEARISH</span><strong>${s.put}<small>/ 6</small></strong><div class="cf-meter"><div style="width:${pctPut}%"></div></div></div></div>
@@ -867,6 +975,9 @@ function renderConfluenceEditor(){
     <section class="section-block"><div class="section-header"><div><h4>05 · Dated confluence assessments</h4><p>Save a snapshot when your research changes; past assessments remain available below.</p></div><button class="btn btn-secondary small-btn" type="button" data-save-cf-snapshot>+ Save assessment</button></div>
       ${e.history.length?[...e.history].sort((a,b)=>b.at.localeCompare(a.at)).map((h,i)=>{const o=confluenceScores(h.signals);return `<details class="cf-history-item"><summary><div><strong>${dateLabel(h.at)} · ${esc(confluenceVerdict(o.result))}</strong><small>Calls ${o.call}/6 · Puts ${o.put}/6 · ${esc(h.decision||'Wait')}</small></div><span aria-hidden="true">⌄</span></summary><div class="cf-history-body"><p><strong>Thesis:</strong> ${esc(h.thesis||'Not recorded')}</p><p><strong>Invalidation:</strong> ${esc(h.risk||'Not recorded')}</p>${CONFLUENCE_SIGNALS.map(d=>{const v=h.signals[d.key];return `<div class="cf-history-signal"><strong>${esc(d.name)} — ${v.side==='call'?'Calls':v.side==='put'?'Puts':v.side==='mixed'?'Mixed':'Not checked'}</strong><p>${esc(v.value||'No observed value')} ${v.notes?`· ${esc(v.notes)}`:''}</p>${safeUrl(v.source)?`<a target="_blank" rel="noopener noreferrer" href="${esc(safeUrl(v.source))}">Saved source ↗</a>`:''}</div>`;}).join('')}</div></details>`;}).join(''):'<p class="empty-text">No dated assessments saved yet. Current changes are autosaved, but snapshots let you review how your analysis evolved.</p>'}
     </section>`;
+  if(isTicker(e.ticker)&&e.ticker.trim()&&(!e.lastPriceAt||!Number.isFinite(Date.parse(e.lastPriceAt))||Date.now()-Date.parse(e.lastPriceAt)>300000)){
+    setTimeout(()=>{if(cf.active&&cfCurrent()?.id===e.id)cfLoadQuote(e.ticker,e.id);},90);
+  }
 }
 function scheduleConfluenceSave(){
   const e=cfCurrent();if(!e)return;e.updatedAt=isoNow();setSaveText('Saving changes…');
@@ -897,7 +1008,7 @@ function setupConfluenceEvents(){
       e[t.dataset.cfEntry]=t.value;scheduleConfluenceSave();
       if(['ticker','company'].includes(t.dataset.cfEntry)){
         const title=panel.querySelector('.editor-top h3');if(title)title.innerHTML=`${esc(e.ticker.toUpperCase()||'Untitled confluence')}${e.company?` <span class="muted">· ${esc(e.company)}</span>`:''}`;
-        refreshConfluenceSidebar();
+        refreshConfluenceSidebar();cfPlanLookup(t);
       }
       return;
     }
@@ -910,6 +1021,8 @@ function setupConfluenceEvents(){
   panel.addEventListener('click',ev=>{
     const b=ev.target.closest('button');if(!b)return;
     if(b.id==='emptyConfluenceButton')return newConfluence();
+    if(b.id==='cfRefreshQuote'){const e=cfCurrent();if(e?.ticker)cfLoadQuote(e.ticker,e.id,true);return;}
+    if(b.dataset.cfSelectCompany!==undefined){cfSelectCompany(Number(b.dataset.cfSelectCompany));return;}
     if(b.id==='saveConfluenceAssessment'||b.matches('[data-save-cf-snapshot]'))return saveConfluenceAssessment();
     if(b.id==='deleteConfluenceEntry')return deleteConfluence();
     if(b.hasAttribute('data-cf-side-key')){
@@ -918,6 +1031,7 @@ function setupConfluenceEvents(){
       scheduleConfluenceSave();renderConfluenceEditor();refreshConfluenceSidebar();
     }
   });
+  panel.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&ev.target.matches('[data-cf-entry="ticker"],[data-cf-entry="company"]'))cfClearSuggestions();});
   refreshConfluenceSidebar();
 }
 
