@@ -158,3 +158,82 @@
 @media(max-width:1000px){.strategy-tab{font-size:11px;letter-spacing:.45px;gap:5px}.strategy-tabs{gap:7px}}
 @media(max-width:740px){.strategy-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}.strategy-tab{font-size:10px;min-height:45px}}
 @media(max-width:520px){.strategy-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.strategy-tab[data-confluence-nav]{grid-column:1/-1}}
+
+/* Day Trading: seven leading indicators, definition popovers, ticker research links,
+   RVOL/ATR calculators and evidence-based directional confluence. */
+.day-leading{border:1px solid #d7e7d8;background:linear-gradient(145deg,#fbfdf9,#fff 60%);}
+.day-leading .section-header h4{font-size:17px;color:#123f2d;letter-spacing:.05px}
+.day-leading .section-header p{max-width:730px;line-height:1.55}
+.day-leading-topcards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:17px 0}
+.day-leading-topcards>div{background:linear-gradient(145deg,#0c3c28,#16583b);border-radius:10px;padding:13px 12px;box-shadow:0 3px 0 #cba64d;color:#fff;min-width:0;}
+.day-leading-topcards>div>span{color:#edcb66;font-size:24px;float:left;margin-right:10px}
+.day-leading-topcards strong{font-size:12px;line-height:1.3;display:block;color:#fff}
+.day-leading-topcards p{font-size:10px;line-height:1.5;color:#eef6ea;margin:5px 0 0}
+.day-leading-layout{display:grid;grid-template-columns:minmax(0,1fr) 242px;gap:12px;align-items:start}
+.day-signals{min-width:0;display:grid;gap:10px}
+.day-signal-card{position:relative;border:1px solid #d8e5d7;background:#fff;border-radius:11px;padding:13px;min-width:0;box-shadow:0 2px 8px #123f2810}
+.day-signal-heading{display:flex;align-items:flex-start;gap:9px;min-width:0}
+.day-signal-check{display:flex;align-items:center;gap:6px;flex:0 0 auto;padding-top:2px;cursor:pointer}
+.day-signal-check input{width:16px;height:16px;accent-color:#18603c}
+.day-number{display:inline-grid;place-items:center;min-width:24px;height:25px;background:#e6f4dc;border-radius:7px;color:#17472e;font-size:12px;font-weight:850}
+.day-signal-icon{display:inline-grid;place-items:center;width:27px;height:27px;border-radius:7px;background:#eff7e8;color:#275c3a;font-size:20px;font-weight:900}
+.day-signal-title{flex:1;min-width:0}
+.day-signal-title>div{display:flex;align-items:center;flex-wrap:wrap;gap:5px}
+.day-signal-title strong{font-size:12px;line-height:1.35;color:#153e2c}
+.day-signal-title p{font-size:11px;line-height:1.45;color:#6c8070;margin:4px 0 0}
+.day-stance-label{flex:0 0 111px;display:flex;flex-direction:column;gap:3px;font-weight:750;font-size:9px;color:#738877}
+.day-stance-label select{width:100%;padding:7px 5px;border-radius:7px;border:1px solid #c8d9ca;background:#f4faf3;color:#225637;font-weight:700;font-size:10px;min-height:33px}
+.day-subchecks{display:flex;flex-wrap:wrap;gap:7px 11px;margin:10px 0 9px 0}
+.day-subcheck{display:inline-flex;align-items:center;gap:4px;padding:4px 5px 4px 0;border-radius:5px;position:relative;min-width:0}
+.day-subcheck>label{display:flex;align-items:center;gap:5px;cursor:pointer;color:#354e3f;font-size:10px;font-weight:600}
+.day-subcheck input{width:14px;height:14px;accent-color:#16603d;flex:0 0 auto}
+.day-subcheck .day-help summary{width:16px;height:16px;font-size:11px}
+.day-help{display:inline-block;position:relative;vertical-align:middle;flex-shrink:0}
+.day-help>summary{display:inline-grid;place-items:center;list-style:none;width:19px;height:19px;border-radius:50%;background:#f0f7e9;border:1px solid #a9c5a9;color:#246441;font-size:12px;font-weight:850;line-height:1;cursor:help;user-select:none}
+.day-help>summary::-webkit-details-marker{display:none}
+.day-help>summary:hover,.day-help[open]>summary,.day-help>summary:focus-visible{background:#dbebce;outline-offset:2px}
+.day-help-pop{display:none;position:absolute;z-index:40;left:0;top:calc(100% + 8px);width:min(300px,70vw);padding:12px 13px;border:1px solid #ddc16e;box-shadow:0 10px 24px #1f342b33;border-radius:9px;background:#fffbea;color:#253d2d;line-height:1.55;white-space:normal;text-align:left}
+.day-help[open] .day-help-pop,.day-help:hover .day-help-pop,.day-help:focus-within .day-help-pop{display:block}
+.day-help-pop strong{display:block;color:#16462e;font-size:12px;margin-bottom:4px}
+.day-help-pop p{font-size:11px;margin:0;color:#3c5643;line-height:1.55;font-weight:500}
+.day-extra{padding:7px 0 9px;margin:1px 0 4px;border-top:1px dashed #e3eae0}
+.day-extra>summary{color:#226a48;cursor:pointer;font-size:11px;font-weight:800}
+.day-metrics-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:9px 0 6px}
+.day-metric-field{display:flex;flex-direction:column;gap:4px;font-size:10px;color:#526d5b;font-weight:750;min-width:0}
+.day-metric-field input{background:#fff;border:1px solid #d1ddd2;border-radius:7px;padding:9px;min-width:0;width:100%;font-size:12px;color:#1e3e2e}
+.day-signal-foot{display:grid;gap:9px;margin-top:10px;min-width:0}
+.day-link-list{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.day-link-list>span{font-size:10px;color:#728477;font-weight:750;margin-right:2px}
+.day-link-list a,.day-your-source{display:inline-flex;align-items:center;padding:6px 9px;min-height:28px;border:1px solid #a3caa6;border-radius:7px;background:#eef8ea;color:#156039;text-decoration:underline;text-underline-offset:2px;font-size:10px;font-weight:800}
+.day-link-list a:hover,.day-link-list a:focus-visible,.day-your-source:hover{border-color:#559b65;background:#deefda;color:#0b4b2c}
+.day-signal-foot textarea,.day-summary-thesis textarea{width:100%;min-width:0;resize:vertical;border-radius:8px;border:1px solid #d2ded3;padding:10px;background:#fff;color:#284134;font-size:12px;font-family:inherit;line-height:1.5}
+.day-source-field{display:flex;flex-direction:column;gap:4px;color:#64816b;font-size:10px;font-weight:750}
+.day-source-field input{font-size:11px;min-width:0;width:100%;border:1px solid #dbe5da;border-radius:7px;padding:8px}
+.day-calculator{background:#f0f8ed;border:1px solid #c8e2c4;border-radius:9px;padding:11px;margin:9px 0;color:#214a32}
+.day-calc-heading{display:flex;align-items:center;gap:5px}
+.day-calc-heading>strong{font-size:12px;color:#194c31}
+.day-formula{font-size:11px;margin-top:6px;line-height:1.5}
+.day-calc-output{padding:8px;border-radius:7px;background:#fff;border:1px solid #d6e6d5;margin:8px 0;font-size:11px;line-height:1.5;color:#496c51}
+.day-calc-output strong{color:#0b693d;font-size:13px}
+.day-calculator small{font-size:10px;line-height:1.5;display:block;color:#5d7666}
+.day-confluence-summary{border:1px solid #bfcdbd;border-radius:12px;overflow:visible;background:#fff;min-width:0;position:sticky;top:14px;box-shadow:0 5px 15px #13392215}
+.day-summary-header{background:#103f2a;border-radius:11px 11px 0 0;color:#fff;padding:13px 12px;font-size:14px}
+.day-summary-inner{padding:13px 12px}
+.day-summary-eyebrow{font-size:11px;font-weight:800;color:#375740;display:flex;align-items:center;gap:5px;margin:0}
+.day-summary-number{text-align:right;color:#18633d;font-size:29px;font-weight:900;line-height:1.25;font-variant-numeric:tabular-nums;margin:4px 0}
+.day-summary-track{border-radius:90px;background:#e2e8e2;overflow:hidden;height:9px}
+.day-summary-track>div{height:100%;border-radius:inherit;background:linear-gradient(90deg,#6cab43,#15643c);transition:width .2s}
+.day-summary-caveat{font-size:10px;color:#718273;line-height:1.55;margin:9px 0 14px}
+.day-summary-line{display:flex;align-items:center;flex-wrap:wrap;justify-content:space-between;gap:5px;padding:8px 0;border-top:1px solid #e8eee5;font-size:11px;color:#274b36}
+.day-summary-line span{border-radius:6px;background:#e9f5e4;color:#21583a;padding:5px 7px;font-size:10px;font-weight:850}
+.day-summary-bias{display:flex;flex-direction:column;gap:5px;font-size:10px;font-weight:800;color:#607964;margin:6px 0 15px}
+.day-summary-bias select{border:1px solid #bfcfc1;border-radius:7px;padding:10px;background:#fff;color:#204934;font-size:12px;font-weight:700;width:100%}
+.day-summary-watch{padding:11px 0;border-top:1px solid #e8eee5;display:grid;gap:7px}
+.day-summary-watch>strong,.day-summary-thesis strong{font-size:11px;color:#234b36}
+.day-summary-watch .day-metric-field{font-size:10px}
+.day-summary-watch .day-metric-field input{padding:9px}
+.day-summary-thesis{display:grid;gap:7px}
+.day-save-snapshot{width:100%;margin:8px 0;font-size:11px}
+@media(max-width:1420px){.day-leading-layout{grid-template-columns:1fr}.day-confluence-summary{position:static}.day-confluence-summary .day-summary-inner{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 15px}.day-summary-header{padding:12px}.day-summary-watch{min-width:0}}
+@media(max-width:960px){.day-leading-topcards{grid-template-columns:1fr}.day-leading-topcards>div{min-height:65px}.day-leading-topcards>div p{margin-left:33px}.day-confluence-summary .day-summary-inner{grid-template-columns:1fr}}
+@media(max-width:520px){.day-signal-card{padding:10px}.day-signal-heading{flex-wrap:wrap}.day-signal-title{flex:1 1 calc(100% - 90px)}.day-stance-label{flex:1 1 100%;margin-top:5px}.day-stance-label select{max-width:210px}.day-subchecks{gap:5px 8px}.day-metrics-grid{grid-template-columns:1fr}.day-summary-inner{padding:12px}.day-help-pop{width:min(265px,76vw)}.day-subcheck:nth-child(3n) .day-help-pop{left:auto;right:0}}

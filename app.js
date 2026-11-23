@@ -60,6 +60,83 @@ const DAY_MARKER_DEFS = {
     ['Open interest at target strike (contracts)','choose']
   ]
 };
+// Additional seven-signal, evidence-based Day Trading worksheet.
+// This augments (never replaces) the original five-stage intraday journal.
+const DAY_LEADING_SIGNALS = [
+  {key:'positioning',name:'Options Positioning',group:'options',weight:2,icon:'▤',short:'Find dealer gamma zones and concentrated strikes.',checks:[
+    ['GEX (+/−)','Positive modeled dealer gamma can dampen swings; negative gamma may amplify hedging flows. Note the model, expiry, and sign.'],
+    ['Gamma flip','Estimated underlying price where modeled net gamma changes sign. Compare the current price to this level; it can move.'],
+    ['Call wall','A strike with large modeled call gamma. May attract or repel price, but is not a guaranteed ceiling.'],
+    ['Put wall','A strike with large modeled put gamma. May act as an important price area, not guaranteed support.'],
+    ['OI concentrations','Large open-interest clusters by strike and expiry. OI alone cannot tell whether trades are bullish or bearish.']
+  ],help:'What to look for: estimated GEX sign, distance to gamma flip, and nearest call/put walls. Dealer-position estimates are model-based, not instructions to push price.',links:[['Barchart GEX','gex'],['Options OI','chain'],['GEX alternatives','gexAlt']]},
+  {key:'iv',name:'Implied Volatility (IV)',group:'volatility',weight:1.5,icon:'▥',short:'Check whether expected volatility is already expensive.',checks:[
+    ['IV Rank','0–100 location of current IV within the past ~52-week high–low range; it does not predict the direction of price.'],
+    ['IV term structure','Compare near-term IV with longer-dated IV. A near-term spike can signal event risk.'],
+    ['Expected move','Options-implied magnitude over a stated expiration/timeframe—not a guaranteed future range.']
+  ],help:'What to look for: whether IV is rising, IV Rank versus its own history, short-dated IV versus longer-dated IV, and expected move relative to your target.',links:[['Barchart IV','iv'],['IV trend chart','ivChart'],['IV history','ivHistory']]},
+  {key:'catalysts',name:'Upcoming Catalysts',group:'volatility',weight:1,icon:'▦',short:'Identify a scheduled release that could cause repricing.',checks:[
+    ['Release time','Check the event date, exact time, and time zone. A surprise can move prices in seconds.'],
+    ['Forecast','Consensus expectation before release; surprises are often more important than the absolute number.'],
+    ['Previous reading','Compare with the last reading and note later revisions.']
+  ],help:'What to look for: CPI, PCE, jobs, Fed decisions, and company earnings. Record release time in ET, forecast, and previous data; never assume a headline guarantees direction.',links:[['BLS releases','bls'],['Fed calendar','fed'],['Earnings','earnings']]},
+  {key:'compression',name:'Price Compression',group:'chart',weight:1.5,icon:'⇥',short:'Look for shrinking price ranges before expansion.',checks:[
+    ['ATR contraction','ATR (Average True Range) estimates typical true range over your selected timeframe. Falling ATR may suggest contraction; it is not a maximum daily move.'],
+    ['Narrowing candle ranges','Several candles with smaller high-to-low ranges, ideally near a meaningful support/resistance level.'],
+    ['Bollinger Band squeeze','Bands tighten as realized volatility contracts. Direction still needs price/volume confirmation.']
+  ],help:'What to look for: small 1H/4H ranges, a clear consolidation boundary, and ATR/Bollinger contraction. Compare today’s high–low range to daily ATR, but a day can exceed 100% of ATR.',links:[['Ticker chart','chart'],['Technical indicators','technical']]},
+  {key:'liquidity',name:'Liquidity Positioning',group:'chart',weight:1.5,icon:'◎',short:'Map possible sweep, imbalance and reaction zones.',checks:[
+    ['Fair Value Gaps (FVGs)','A three-candle price imbalance. Mark the gap boundaries and whether price holds, fills, or rejects the area.'],
+    ['Imbalances','Fast price movement with limited two-sided trading; gaps may or may not be revisited.'],
+    ['Liquidity sweeps','Price pierces a prior high/low then reverses back; wait for evidence rather than assuming every breakout fails.'],
+    ['Previous highs / lows','Prior day/session extremes, opening range, and swing points can host stops and resting orders.'],
+    ['Optional Fibonacci overlap','A 50% or 61.8% retracement overlapping a key zone can add context. Optional—not scored separately.']
+  ],help:'What to look for: 1H/4H FVG boundaries, prior high/low sweeps and reactions. Mark levels before deciding CALL or PUT direction.',links:[['TradingView chart','chart'],['Technical view','technical']]},
+  {key:'market',name:'Market Positioning',group:'options',weight:1,icon:'▥',short:'Assess crowding beyond options strike structure.',checks:[
+    ['Short positioning','Check short interest or positioning changes; high short interest alone does not prove a squeeze is imminent.'],
+    ['Institutional exposure','Review fund holdings/13F or futures positioning with their reporting delays clearly in mind.'],
+    ['Crowding','Look for one-sided sentiment or positioning that could unwind quickly.']
+  ],help:'What to look for: short interest, institutional holdings and crowded narratives. Positioning sources update at different speeds and should not be presented as live dealer flow.',links:[['Short interest','short'],['SEC filings','sec'],['CFTC COT (futures)','cot']]},
+  {key:'rvol',name:'Relative Volume & Participation',group:'volatility',weight:1.5,icon:'▥',short:'See whether participation is building before a move.',checks:[
+    ['RVOL below 0.80×','Quiet activity relative to the matching intraday interval; may accompany compression.'],
+    ['RVOL at / above 1.20×','Suggested early participation alert. Validate against your market and timeframe.'],
+    ['RVOL at / above 1.50×','Suggested strong activity threshold, not proof of directional breakout.']
+  ],help:'RVOL = current candle volume ÷ average volume of candles at the SAME time and SAME length across about 20 prior sessions. Example: 1.92M ÷ 1.60M = 1.20×. These are suggested thresholds to backtest.',links:[['Ticker volume chart','chart'],['RVOL at Time guide','rvolGuide']]}
+];
+const DAY_INPUT_KEYS=['gexSign','gammaFlip','callWall','putWall','ivRank','nearIV','farIV','expectedMove','releaseTime','forecast','previous','atr','high','low','currentVolume','averageVolume','support','resistance','thesis'];
+const DAY_REVIEW_STANCES=['','supportive','neutral','caution'];
+function blankDayLeading(){return {bias:'',inputs:Object.fromEntries(DAY_INPUT_KEYS.map(k=>[k,''])),signals:Object.fromEntries(DAY_LEADING_SIGNALS.map(x=>[x.key,{reviewed:false,stance:'',checks:x.checks.map(()=>false),notes:'',source:''}]))};}
+function normalizeDayLeading(raw){
+  const result=blankDayLeading();
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))return result;
+  result.bias=['call','put'].includes(raw.bias)?raw.bias:'';
+  for(const k of DAY_INPUT_KEYS)result.inputs[k]=plain(raw.inputs?.[k],k==='thesis'?10000:160);
+  for(const x of DAY_LEADING_SIGNALS){const a=raw.signals?.[x.key]||{},b=result.signals[x.key];
+    b.reviewed=a.reviewed===true;b.stance=DAY_REVIEW_STANCES.includes(a.stance)?a.stance:'';
+    b.checks=x.checks.map((_,i)=>a.checks?.[i]===true);b.notes=plain(a.notes,12000);b.source=plain(a.source,2500);
+  }
+  return result;
+}
+function dayConfluenceStats(d){
+  let assessed=0,totalWeight=0,supportWeight=0,reviewed=0;
+  for(const x of DAY_LEADING_SIGNALS){const a=d.signals[x.key];if(a.reviewed)reviewed++;
+    if(!a.reviewed||!a.stance)continue;
+    assessed++;totalWeight+=x.weight;supportWeight+=x.weight*(a.stance==='supportive'?1:a.stance==='neutral'?0.5:0);
+  }
+  return {reviewed,assessed,pct:totalWeight?Math.round(100*supportWeight/totalWeight):null,coverage:Math.round(100*assessed/DAY_LEADING_SIGNALS.length)};
+}
+function dayNumeric(v){const text=String(v??'').trim();if(!text)return null;const n=Number(text);return Number.isFinite(n)&&n>=0?n:null;}
+function dayRvol(d){const a=dayNumeric(d.inputs.currentVolume),b=dayNumeric(d.inputs.averageVolume);return a!==null&&b!==null&&b>0?a/b:null;}
+function dayAtrUse(d){const atr=dayNumeric(d.inputs.atr),hi=dayNumeric(d.inputs.high),lo=dayNumeric(d.inputs.low);return atr!==null&&atr>0&&hi!==null&&lo!==null&&hi>=lo?(hi-lo)/atr*100:null;}
+function dayLinkUrl(kind,entry){
+  const raw=String(entry?.ticker||'').trim().toUpperCase(),sym=/^[A-Z][A-Z0-9.\-]{0,11}$/.test(raw)?raw:'';
+  const bSymbol=sym==='SPX'?'$SPX':sym;
+  const b='https://www.barchart.com/stocks/quotes/'+encodeURIComponent(bSymbol);
+  const supportedBarchart=!!sym&&!['NDX','VIX','RUT'].includes(sym);
+  const chart='https://www.tradingview.com/chart/'+(sym?'?symbol='+encodeURIComponent(sym):'');
+  const marketLinks={gex:supportedBarchart?b+'/gamma-exposure':'https://www.barchart.com/options',gexAlt:'https://gextool.com/',chain:supportedBarchart?b+'/options':'https://www.barchart.com/options',iv:supportedBarchart?b+'/options-data':'https://www.barchart.com/options',ivChart:supportedBarchart?b+'/volatility-charts':'https://www.barchart.com/options',ivHistory:supportedBarchart?b+'/options-history':'https://www.barchart.com/options',bls:'https://www.bls.gov/schedule/news_release/',fed:'https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm',earnings:'https://www.nasdaq.com/market-activity/earnings',chart,technical:chart,short:sym?'https://www.nasdaq.com/market-activity/stocks/'+encodeURIComponent(sym.toLowerCase())+'/short-interest':'https://www.nasdaq.com/market-activity/stocks',sec:'https://www.sec.gov/edgar/search/',cot:'https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm',rvolGuide:'https://www.tradingview.com/support/solutions/43000635874-how-do-we-calculate-relative-volume-and-relative-volume-at-time/'};
+  return marketLinks[kind]||'https://www.barchart.com/';
+}
 const stageList = entry => entry?.strategy === 'day' ? DAY_STAGES : STAGES;
 const markerDefs = key => DAY_MARKER_DEFS[key] || MARKER_DEFS[key] || [];
 
@@ -269,7 +346,7 @@ function createEntry(strategy='swings') {
     direction:'Long',timeframe:'Daily',entryPrice:'',targetPrice:'',stopPrice:'',exitPrice:'',capital:'',quantity:'',exitPremium:'',openedDate:'',closedDate:'',
     optionType:'Call',expiration:'',strike:'',premium:'',contracts:'',delta:'',ivRank:'',reviewDate:'',allocation:'',
     gamma:'',theta:'',vega:'',ivPercent:'',bidPrice:'',askPrice:'',openInterest:'',optionVolume:'',expectedMove:'',targetPremium:'',stopPremium:'',maxDailyLoss:'',openingRangeHigh:'',openingRangeLow:'',vwap:'',setupTime:'',
-    lastPrice:null,lastPriceCurrency:'USD',lastPriceAt:'',lastPriceSymbol:'',instrumentType:'EQUITY',
+    lastPrice:null,lastPriceCurrency:'USD',lastPriceAt:'',lastPriceSymbol:'',instrumentType:'EQUITY',dayLeading:strategy==='day'?blankDayLeading():null,
     stages:Object.fromEntries(stageList({strategy}).map(s=>[s.key,emptyStage(s)])),logs:[],snapshots:[],createdAt:stamp,updatedAt:stamp};
 }
 function normalizeCore(raw) {
@@ -277,6 +354,7 @@ function normalizeCore(raw) {
   const e=createEntry(Object.hasOwn(STRATEGIES,raw.strategy)?raw.strategy:'swings');
   e.id=plain(raw.id,128)||makeId();
   for(const k of ['ticker','company','setup','thesis','invalidationReason','lesson','entryPrice','targetPrice','stopPrice','exitPrice','capital','quantity','exitPremium','openedDate','closedDate','expiration','strike','premium','contracts','delta','ivRank','reviewDate','allocation','lastPriceCurrency','lastPriceAt','lastPriceSymbol','instrumentType','gamma','theta','vega','ivPercent','bidPrice','askPrice','openInterest','optionVolume','expectedMove','targetPremium','stopPremium','maxDailyLoss','openingRangeHigh','openingRangeLow','vwap','setupTime']) e[k]=plain(raw[k]);
+  if(e.strategy==='day')e.dayLeading=normalizeDayLeading(raw.dayLeading);
   e.lastPrice=raw.lastPrice!==null&&Number.isFinite(Number(raw.lastPrice))&&Number(raw.lastPrice)>0?Number(raw.lastPrice):null;
   e.status=STATUSES.includes(raw.status)?raw.status:'Researching';
   e.decision=DECISIONS.includes(raw.decision)?raw.decision:'Undecided';
@@ -468,7 +546,7 @@ function newEntry(){
   showToast('New analysis created. Your research saves automatically.');
 }
 function filteredItems(strategy,search,status){
-  const q=search.trim().toLowerCase();return app.entries.filter(e=>(strategy==='all'||e.strategy===strategy)&&(status==='all'||e.status===status)&&(!q||[e.ticker,e.company,e.setup,e.thesis,e.lesson,...stageList(e).flatMap(s=>[e.stages[s.key].notes,...e.stages[s.key].data.flatMap(d=>[d.metric,d.value])]),...e.logs.map(l=>l.text)].join(' ').toLowerCase().includes(q))).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
+  const q=search.trim().toLowerCase();return app.entries.filter(e=>(strategy==='all'||e.strategy===strategy)&&(status==='all'||e.status===status)&&(!q||[e.ticker,e.company,e.setup,e.thesis,e.lesson,...Object.values(e.dayLeading?.signals||{}).map(d=>d.notes||''),e.dayLeading?.inputs?.thesis||'',...stageList(e).flatMap(s=>[e.stages[s.key].notes,...e.stages[s.key].data.flatMap(d=>[d.metric,d.value])]),...e.logs.map(l=>l.text)].join(' ').toLowerCase().includes(q))).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
 }
 function renderList(){
   const all=app.entries.filter(e=>e.strategy===app.strategy);
@@ -647,7 +725,7 @@ function selectCompany(index){
   const e=current(),item=suggestions[index];if(!item||!e||suggestionEntryId!==e.id)return;
   e.ticker=item.symbol;e.company=item.name;e.instrumentType=item.type;e.lastPrice=null;e.lastPriceSymbol='';e.lastPriceAt='';
   const tick=$('field-ticker'),name=$('field-company');if(tick)tick.value=item.symbol;if(name)name.value=item.name;
-  clearSuggestions();updateQuotePanel();autosave();
+  clearSuggestions();updateQuotePanel();updateResearchLinks(e);updateDayLeadingLinks(e);autosave();
   const title=document.querySelector('#editorPanel .editor-top h3');if(title)title.innerHTML=`${esc(e.ticker)} <span class="muted">· ${esc(e.company)}</span>`;
   renderList();loadQuote(e.ticker,e.id,true);
 }
@@ -665,6 +743,61 @@ function planLookup(target){
   updateQuotePanel();
 }
 
+function dayHelp(text,title='What to look for'){
+  return `<details class="day-help"><summary title="${esc(title)}" aria-label="${esc(title)}">ⓘ</summary><div class="day-help-pop"><strong>${esc(title)}</strong><p>${esc(text)}</p></div></details>`;
+}
+function dayInput(label,key,value,more=''){
+  return `<label class="day-metric-field"><span>${esc(label)}</span><input ${more} data-day-leading-input="${esc(key)}" value="${esc(value)}" placeholder="Enter value" autocomplete="off" /></label>`;
+}
+function daySignalMetrics(e,key){const d=e.dayLeading.inputs;
+  if(key==='positioning')return `<details class="day-extra"><summary>+ Record modeled gamma levels</summary><div class="day-metrics-grid">${dayInput('GEX sign / source','gexSign',d.gexSign)}${dayInput('Gamma flip price','gammaFlip',d.gammaFlip,'inputmode="decimal"')}${dayInput('Call wall price','callWall',d.callWall,'inputmode="decimal"')}${dayInput('Put wall price','putWall',d.putWall,'inputmode="decimal"')}</div></details>`;
+  if(key==='iv')return `<details class="day-extra"><summary>+ Record IV readings</summary><div class="day-metrics-grid">${dayInput('IV Rank (0–100)','ivRank',d.ivRank,'inputmode="decimal"')}${dayInput('Near-term IV %','nearIV',d.nearIV,'inputmode="decimal"')}${dayInput('Longer-term IV %','farIV',d.farIV,'inputmode="decimal"')}${dayInput('Expected move','expectedMove',d.expectedMove)}</div></details>`;
+  if(key==='catalysts')return `<details class="day-extra"><summary>+ Record event figures</summary><div class="day-metrics-grid">${dayInput('Event time (ET)','releaseTime',d.releaseTime)}${dayInput('Forecast','forecast',d.forecast)}${dayInput('Previous reading','previous',d.previous)}</div></details>`;
+  if(key==='compression')return `<div class="day-calculator"><div class="day-calc-heading"><strong>Daily ATR used</strong>${dayHelp('Use daily ATR (often 14 sessions), today’s high and low. (High − Low) ÷ ATR × 100. Reaching 100% does not mean the move must stop.','ATR calculation')}</div><div class="day-metrics-grid">${dayInput('Daily ATR','atr',d.atr,'inputmode="decimal"')}${dayInput('Today’s high','high',d.high,'inputmode="decimal"')}${dayInput('Today’s low','low',d.low,'inputmode="decimal"')}</div><div class="day-calc-output" id="dayAtrOutput">${dayAtrResult(e.dayLeading)}</div></div>`;
+  if(key==='rvol')return `<div class="day-calculator"><div class="day-calc-heading"><strong>RVOL (same-time comparison)</strong>${dayHelp('Use the volume of the current candle divided by the average volume for a candle of the same length at the same time over ~20 sessions. Do not mix full-day volume and 5-minute volume.','RVOL calculation')}</div><div class="day-formula">RVOL = current candle volume ÷ 20-session average volume of the matching time-slot candle</div><div class="day-metrics-grid">${dayInput('Current candle volume','currentVolume',d.currentVolume,'inputmode="decimal"')}${dayInput('20-session same-time average','averageVolume',d.averageVolume,'inputmode="decimal"')}</div><div class="day-calc-output" id="dayRvolOutput">${dayRvolResult(e.dayLeading)}</div><small>Illustration only: 1.92M ÷ 1.60M = 1.20×. Starting alerts to test: &lt;0.80× quiet; ≥1.20× early; ≥1.50× stronger participation.</small></div>`;
+  return '';
+}
+function dayRvolResult(d){const rv=dayRvol(d);if(rv===null)return 'Enter comparable candle volumes to calculate RVOL.';
+  return `<strong>${rv.toFixed(2)}× RVOL</strong> · ${rv<0.8?'Quiet participation':rv<1.2?'Below early-activity alert':rv<1.5?'Early activity (≥1.20×)':'Strong relative participation (≥1.50×)'} · thresholds are research aids.`;
+}
+function dayAtrResult(d){const value=dayAtrUse(d);return value===null?'Enter daily ATR and today’s high/low to calculate range used.':`<strong>${value.toFixed(1)}% of daily ATR</strong> used today. ${value>=100?'Above a typical daily ATR; further movement is still possible.':value>=75?'A substantial share of typical range has been covered.':'Range still below 75% of ATR.'} ATR is an average—not a daily limit.`;}
+function daySignalRow(e,x,index){const v=e.dayLeading.signals[x.key];return `<article class="day-signal-card" data-day-card="${esc(x.key)}"><div class="day-signal-heading"><label class="day-signal-check"><input type="checkbox" data-day-leading-reviewed="${esc(x.key)}" ${v.reviewed?'checked':''} aria-label="Reviewed ${esc(x.name)}"/><span class="day-number">${index+1}</span><span class="day-signal-icon">${esc(x.icon)}</span></label><div class="day-signal-title"><div><strong>${esc(x.name)}</strong> ${dayHelp(x.help,x.name+' — explanation')}</div><p>${esc(x.short)}</p></div><label class="day-stance-label"><span>Evidence assessment</span><select data-day-leading-stance="${esc(x.key)}"><option value="" ${!v.stance?'selected':''}>Not assessed</option><option value="supportive" ${v.stance==='supportive'?'selected':''}>Supportive</option><option value="neutral" ${v.stance==='neutral'?'selected':''}>Neutral</option><option value="caution" ${v.stance==='caution'?'selected':''}>Caution</option></select></label></div>
+  <div class="day-subchecks">${x.checks.map(([name,definition],i)=>`<span class="day-subcheck"><label><input type="checkbox" data-day-leading-sub="${esc(x.key)}" data-day-leading-index="${i}" ${v.checks[i]?'checked':''}/><span>${esc(name)}</span></label>${dayHelp(definition,name+' — what to look for')}</span>`).join('')}</div>
+  ${daySignalMetrics(e,x.key)}<div class="day-signal-foot"><div class="day-link-list"><span>Research:</span>${x.links.map(([label,kind])=>`<a href="${esc(dayLinkUrl(kind,e))}" data-day-research="${esc(kind)}" target="_blank" rel="noopener noreferrer" title="Open research source for ${esc(e.ticker||'the chosen ticker')}">↗ ${esc(label)}</a>`).join('')}</div><textarea aria-label="${esc(x.name)} analysis notes" data-day-leading-notes="${esc(x.key)}" rows="2" placeholder="What did you find? Record the actual values and any conflicting evidence…">${esc(v.notes)}</textarea><label class="day-source-field">My source URL<input type="url" data-day-leading-source="${esc(x.key)}" placeholder="https://…" value="${esc(v.source)}" /></label>${safeUrl(v.source)?`<a class="day-your-source" href="${esc(safeUrl(v.source))}" target="_blank" rel="noopener noreferrer">Open my saved source ↗</a>`:''}</div></article>`;}
+function dayLeadingSummary(e){const d=e.dayLeading,s=dayConfluenceStats(d);const pct=s.pct;return `<div class="day-summary-header"><strong>◎ Confluence Summary</strong></div><div class="day-summary-inner"><p class="day-summary-eyebrow">Weighted checklist support ${dayHelp('The score measures the share of assessed evidence supporting your chosen CALL/PUT thesis. Supportive = full weight, Neutral = half, Caution = zero. Unassessed signals are excluded. This is NOT the probability of a profitable trade.','How scoring works')}</p><div class="day-summary-number">${d.bias&&pct!==null?pct+'%':'—'}</div><div class="day-summary-track"><div id="dayConfluenceBar" style="width:${d.bias&&pct!==null?pct:0}%"></div></div><p class="day-summary-caveat">${d.bias&&pct!==null?`${s.assessed}/7 indicators assessed · ${s.coverage}% coverage`:'Choose CALL or PUT and assess evidence to display a score.'}<br/>Support score ≠ probability of profit. Partial coverage deserves caution.</p>
+    <div class="day-summary-line"><strong>Bias</strong><span>${d.bias==='call'?'Potential CALL setup':d.bias==='put'?'Potential PUT setup':'Not chosen'}</span></div>
+    <label class="day-summary-bias">Evaluate thesis<select data-day-leading-bias><option value="" ${d.bias===''?'selected':''}>Choose CALL or PUT</option><option value="call" ${d.bias==='call'?'selected':''}>CALL (bullish)</option><option value="put" ${d.bias==='put'?'selected':''}>PUT (bearish)</option></select></label>
+    <div class="day-summary-watch"><strong>Watch levels</strong>${dayInput('Support level','support',d.inputs.support,'inputmode="decimal"')}${dayInput('Resistance level','resistance',d.inputs.resistance,'inputmode="decimal"')}</div>
+    <div class="day-summary-watch"><label class="day-summary-thesis"><strong>Trade thesis</strong><textarea data-day-leading-input="thesis" rows="4" placeholder="Why CALL or PUT? What evidence disagrees? What would invalidate the idea?">${esc(d.inputs.thesis)}</textarea></label></div>
+    <p class="day-summary-caveat">Check marks = researched, not confirmed. Grade each signal relative to your chosen directional thesis.</p><button type="button" class="btn btn-primary day-save-snapshot" data-day-save-snapshot>Save research snapshot</button><p class="day-summary-caveat">Changes autosave. Snapshots preserve the current checklist in Analysis History.</p></div>`;}
+function dayLeadingMarkup(e){return `<section class="section-block day-leading" id="dayLeadingSection"><div class="section-header"><div><h4>DAY TRADING · 7 Leading Indicators</h4><p>Research first: check the evidence, use ⓘ for plain-English help, open ticker-specific links, and assess whether each signal supports your CALL/PUT thesis.</p></div><span class="section-tag">AUTOSAVED</span></div><div class="day-leading-topcards"><div><span>▥</span><strong>★ Volatility Setup</strong><p>Is a larger move being priced in?</p></div><div><span>▤</span><strong>★ Options Positioning</strong><p>Where might dealer hedging amplify price?</p></div><div><span>▯</span><strong>★ Chart Setup</strong><p>Are 1H / 4H structures compressing, reversing or breaking levels?</p></div></div><div class="day-leading-layout"><div class="day-signals">${DAY_LEADING_SIGNALS.map((x,i)=>daySignalRow(e,x,i)).join('')}</div><aside class="day-confluence-summary" id="dayLeadingSummary">${dayLeadingSummary(e)}</aside></div></section>`;}
+function refreshDayLeadingSummary(e){if(e?.strategy!=='day')return;const box=$('dayLeadingSummary');if(box){
+    // Preserve thesis/levels focus while replacing only non-input visual output.
+    const s=dayConfluenceStats(e.dayLeading),d=e.dayLeading,score=d.bias&&s.pct!==null?s.pct:null;
+    const number=box.querySelector('.day-summary-number');if(number)number.textContent=score!==null?`${score}%`:'—';
+    const bar=box.querySelector('#dayConfluenceBar');if(bar)bar.style.width=`${score??0}%`;
+    const caveat=box.querySelector('.day-summary-caveat');if(caveat)caveat.innerHTML=score!==null?`${s.assessed}/7 indicators assessed · ${s.coverage}% coverage<br/>Support score ≠ probability of profit. Partial coverage deserves caution.`:'Choose CALL or PUT and assess evidence to display a score.<br/>Support score ≠ probability of profit. Partial coverage deserves caution.';
+    const badge=box.querySelector('.day-summary-line span');if(badge)badge.textContent=d.bias==='call'?'Potential CALL setup':d.bias==='put'?'Potential PUT setup':'Not chosen';
+  }
+  const rv=$('dayRvolOutput');if(rv)rv.innerHTML=dayRvolResult(e.dayLeading);
+  const atr=$('dayAtrOutput');if(atr)atr.innerHTML=dayAtrResult(e.dayLeading);
+}
+function updateDayLeadingLinks(e){if(e?.strategy!=='day')return;document.querySelectorAll('[data-day-research]').forEach(a=>{a.href=dayLinkUrl(a.dataset.dayResearch,e);a.title=`Open ${a.textContent.trim()} research for ${e.ticker||'your selected ticker'}`;});}
+function updateDayLeadingInput(t){const e=current();if(e?.strategy!=='day')return false;const d=e.dayLeading;
+  if(t.dataset.dayLeadingInput){const k=t.dataset.dayLeadingInput;if(DAY_INPUT_KEYS.includes(k)){d.inputs[k]=plain(t.value,k==='thesis'?10000:160);autosave();refreshDayLeadingSummary(e);}return true;}
+  const k=t.dataset.dayLeadingNotes;if(k&&d.signals[k]){d.signals[k].notes=plain(t.value,12000);autosave();return true;}
+  const src=t.dataset.dayLeadingSource;if(src&&d.signals[src]){d.signals[src].source=plain(t.value,2500);autosave();return true;}
+  return false;
+}
+function updateDayLeadingChoice(t){const e=current();if(e?.strategy!=='day')return false;const d=e.dayLeading;
+  if(t.hasAttribute('data-day-leading-bias')){const next=t.value;if(d.bias!==next){if(d.bias&&Object.values(d.signals).some(x=>x.stance)&&!confirm('Changing CALL/PUT direction will reset the seven evidence ratings, but preserve checks and notes. Continue?')){t.value=d.bias;return true;}
+      d.bias=next;Object.values(d.signals).forEach(x=>x.stance='');const open=captureOpen();autosave();renderEditor(open);
+    }return true;}
+  const k=t.dataset.dayLeadingReviewed;if(k&&d.signals[k]){d.signals[k].reviewed=t.checked;autosave();refreshDayLeadingSummary(e);return true;}
+  const key=t.dataset.dayLeadingSub;if(key&&d.signals[key]){const i=Number(t.dataset.dayLeadingIndex);if(i>=0&&i<d.signals[key].checks.length){d.signals[key].checks[i]=t.checked;if(t.checked){d.signals[key].reviewed=true;const parent=document.querySelector(`[data-day-leading-reviewed="${key}"]`);if(parent)parent.checked=true;}autosave();refreshDayLeadingSummary(e);}return true;}
+  const stance=t.dataset.dayLeadingStance;if(stance&&d.signals[stance]){d.signals[stance].stance=DAY_REVIEW_STANCES.includes(t.value)?t.value:'';if(t.value){d.signals[stance].reviewed=true;const parent=document.querySelector(`[data-day-leading-reviewed="${stance}"]`);if(parent)parent.checked=true;}autosave();refreshDayLeadingSummary(e);return true;}
+  return false;
+}
 function renderEditor(openOverride){
   const el=$('editorPanel');const e=current();
   if(!e){el.innerHTML='<div class="blank-editor"><div class="blank-icon">↗</div><h3>Start with a thesis.</h3><p class="muted">Create an analysis, collect evidence as you research, and come back to see how your thinking evolved.</p><button type="button" class="btn btn-primary" id="emptyNewButton">+ New analysis</button></div>';return;}
@@ -675,6 +808,7 @@ function renderEditor(openOverride){
   el.innerHTML=`
     <div class="editor-top"><div><p class="section-overline">INVESTMENT RESEARCH / ${esc(STRATEGIES[e.strategy].name.toUpperCase())}</p><h3>${esc(e.ticker.trim().toUpperCase()||'Untitled analysis')}${e.company?` <span class="muted">· ${esc(e.company)}</span>`:''}</h3><div class="editor-heading-meta"><span class="status-pill ${esc(e.status)}">${esc(e.status)}</span><span class="muted small">Updated ${dateLabel(e.updatedAt)}</span></div></div><div class="editor-actions"><button type="button" class="btn btn-secondary small-btn" id="snapshotButton">Save snapshot</button><button type="button" class="btn btn-danger small-btn" id="deleteButton">Delete</button></div></div>
     <section class="section-block"><div class="section-header"><h4>01 · Research idea</h4><span class="section-tag">AUTOSAVED</span></div><div class="form-grid">${field('Ticker / symbol','ticker',e.ticker)}${field('Company / asset','company',e.company)}${field('Idea / setup name','setup',e.setup)}${selectField('Research status','status',e.status,STATUSES)}</div>${quotePanelMarkup(e)}</section>
+    ${e.strategy==='day'?dayLeadingMarkup(e):''}
     <section class="section-block"><div class="section-header"><div><h4>02 · ${e.strategy==='day'?'Five-stage intraday framework':'Five-step investment framework'}</h4><p>${e.strategy==='day'?'Readings show directional bias, not automatic entry approval. Record three intraday observations per checked marker.':'Check your evidence, enter the data, and assess the weight of your findings.'}</p></div></div>
       <div class="progress-section"><div class="progress-top"><span>Research checklist progress</span><strong id="progressPercent">${m.pct}%</strong></div><div class="progress-line"><div style="width:${m.pct}%" id="progressBar"></div></div><div class="progress-note" id="progressNote">${m.done} of ${m.total} prompts checked · ${m.rated} of ${stageList(e).length-(e.stages.options?.rating==='na'?1:0)} stages scored. Completion is not a buy signal.</div><div id="overallSignal">${meterMarkup(allSignals(e),true)}</div></div>
       ${e.strategy==='day'?'<div class="day-trade-focus"><strong>Enter only if the reward justifies the risk.</strong><p>For Calls, a bullish directional score may support the thesis; for Puts, a bearish score may support it. Neither implies positive expectancy. All markets and options inputs are manual; price lookup may be delayed.</p></div>':''}<div class="stage-list">${stageList(e).map((s,i)=>stageMarkup(e,s,i,opened.has(s.key))).join('')}</div></section>
@@ -700,7 +834,7 @@ function rerenderEditor(){const open=captureOpen();renderEditor(open);}
 function renderHistory(){
   const filtered=filteredItems($('historyScope').value,$('historySearch').value,$('historyStatus').value),el=$('historyResults');
   if(!filtered.length){el.innerHTML='<div class="empty-history"><h4>No analyses found</h4><p>Save your first research idea or adjust the history filters.</p></div>';return;}
-  el.innerHTML=filtered.map(e=>{const m=metrics(e),summary=allSignals(e);return `<div class="history-item"><div><h4>${esc(e.ticker.trim().toUpperCase()||'UNTITLED')} <span class="muted">${esc(e.company)}</span></h4><p>${esc(e.setup||e.thesis.slice(0,150)||'No thesis recorded yet.')}</p><div class="history-facts"><span class="history-fact">${esc(STRATEGIES[e.strategy].name)}</span><span class="status-pill ${esc(e.status)}">${esc(e.status)}</span><span class="history-fact">${esc(e.decision)}</span><span class="history-fact">${m.done}/${m.total} checked</span><span class="history-fact">${esc(summary.rating?summary.rating[0].toUpperCase()+summary.rating.slice(1):'Meter incomplete')}</span><span class="history-fact">${e.logs.length} updates · ${e.snapshots.length} snapshots</span>${realizedOutcome(e)?`<span class="history-fact">Return ${realizedOutcome(e).pct>=0?'+':''}${realizedOutcome(e).pct.toFixed(2)}%</span>`:''}</div></div><div class="history-actions"><span class="muted small">${shortDate(e.updatedAt)}</span><button type="button" class="btn btn-secondary small-btn" data-history-open="${esc(e.id)}">Open analysis</button></div></div>`;}).join('');
+  el.innerHTML=filtered.map(e=>{const m=metrics(e),summary=allSignals(e);return `<div class="history-item"><div><h4>${esc(e.ticker.trim().toUpperCase()||'UNTITLED')} <span class="muted">${esc(e.company)}</span></h4><p>${esc(e.setup||e.thesis.slice(0,150)||'No thesis recorded yet.')}</p><div class="history-facts"><span class="history-fact">${esc(STRATEGIES[e.strategy].name)}</span><span class="status-pill ${esc(e.status)}">${esc(e.status)}</span><span class="history-fact">${esc(e.decision)}</span><span class="history-fact">${m.done}/${m.total} checked</span>${e.strategy==='day'?`<span class="history-fact">${dayConfluenceStats(e.dayLeading).reviewed}/7 leading indicators</span>`:''}<span class="history-fact">${esc(summary.rating?summary.rating[0].toUpperCase()+summary.rating.slice(1):'Meter incomplete')}</span><span class="history-fact">${e.logs.length} updates · ${e.snapshots.length} snapshots</span>${realizedOutcome(e)?`<span class="history-fact">Return ${realizedOutcome(e).pct>=0?'+':''}${realizedOutcome(e).pct.toFixed(2)}%</span>`:''}</div></div><div class="history-actions"><span class="muted small">${shortDate(e.updatedAt)}</span><button type="button" class="btn btn-secondary small-btn" data-history-open="${esc(e.id)}">Open analysis</button></div></div>`;}).join('');
 }
 function savedSnapshot(){
   const e=current();if(!e)return;
@@ -716,7 +850,7 @@ function showSnapshot(id){
   const e=current(),s=e?.snapshots.find(x=>x.id===id);if(!s)return;app.snapshotId=id;
   const x=s.data;
   $('snapshotModalTitle').textContent=`${x.ticker?.toUpperCase()||'Untitled'} · ${dateLabel(s.at)}`;
-  $('snapshotContent').innerHTML=`<div class="snapshot-section"><h4>Decision &amp; thesis</h4><p>Status: ${esc(x.status)} · Decision: ${esc(x.decision)}</p><p>${esc(x.thesis||'No thesis recorded')}</p><p>Invalidation: ${esc(x.invalidationReason||'Not recorded')}</p></div>${stageList(x).map(st=>{const v=x.stages[st.key];const observations=v.data.map(d=>`${d.metric}: ${d.value}${d.source?` (${d.source})`:''}`).join('\n');const snapshotScore=stageSignal(x,st.key);return `<div class="snapshot-section"><h4>${esc(st.name)} · ${esc(snapshotScore.rating||'Insufficient readings')} · ${v.checks.filter(Boolean).length}/${st.checks.length} checked</h4><p>${esc(v.notes||'No analysis notes')}</p><p>${v.markers.map((m,i)=>v.checks[i]?`${m.name}: ${m.readings.join(' → ')} (${m.direction})`:'').filter(Boolean).map(esc).join('<br>')||'No numeric evidence saved'}</p>${observations?`<p>Data points:\n${esc(observations)}</p>`:''}</div>`;}).join('')}<div class="snapshot-section"><h4>Trade / contract record</h4><p>Entry: ${esc(x.entryPrice||'—')} · Target: ${esc(x.targetPrice||'—')} · Invalidation: ${esc(x.stopPrice||'—')}</p><p>Exit: ${esc(x.exitPrice||'—')} · Capital: ${esc(x.capital||'—')} · Shares: ${esc(x.quantity||'—')}</p>${['leaps','day'].includes(x.strategy)?`<p>${esc(x.optionType)} · Strike ${esc(x.strike||'—')} · Expiration ${esc(x.expiration||'—')} · Entry premium ${esc(x.premium||'—')} · Exit premium ${esc(x.exitPremium||'—')}</p>${x.strategy==='day'?`<p>Target premium ${esc(x.targetPremium||'—')} · Stop premium ${esc(x.stopPremium||'—')} · Delta ${esc(x.delta||'—')} · Gamma ${esc(x.gamma||'—')} · Theta ${esc(x.theta||'—')} · Vega ${esc(x.vega||'—')} · IV ${esc(x.ivPercent||'—')}%</p>`:''}`:''}<p>Lessons: ${esc(x.lesson||'Not recorded')}</p></div>`;
+  $('snapshotContent').innerHTML=`<div class="snapshot-section"><h4>Decision &amp; thesis</h4><p>Status: ${esc(x.status)} · Decision: ${esc(x.decision)}</p><p>${esc(x.thesis||'No thesis recorded')}</p><p>Invalidation: ${esc(x.invalidationReason||'Not recorded')}</p></div>${x.strategy==='day'&&x.dayLeading?`<div class="snapshot-section"><h4>Seven leading indicators · ${x.dayLeading.bias?x.dayLeading.bias.toUpperCase():'No bias'}</h4><p>${DAY_LEADING_SIGNALS.map(d=>{const a=x.dayLeading.signals[d.key];return `${d.name}: ${a.reviewed?'Reviewed':'Not reviewed'} · ${a.stance||'No assessment'} · ${a.notes||'No notes'}`;}).map(esc).join('<br>')}</p><p>RVOL: ${esc(dayRvol(x.dayLeading)?.toFixed(2)||'not entered')}× · Daily ATR used: ${esc(dayAtrUse(x.dayLeading)?.toFixed(1)||'not entered')}%</p><p>Trade thesis: ${esc(x.dayLeading.inputs.thesis||'Not recorded')}</p></div>`:''}${stageList(x).map(st=>{const v=x.stages[st.key];const observations=v.data.map(d=>`${d.metric}: ${d.value}${d.source?` (${d.source})`:''}`).join('\n');const snapshotScore=stageSignal(x,st.key);return `<div class="snapshot-section"><h4>${esc(st.name)} · ${esc(snapshotScore.rating||'Insufficient readings')} · ${v.checks.filter(Boolean).length}/${st.checks.length} checked</h4><p>${esc(v.notes||'No analysis notes')}</p><p>${v.markers.map((m,i)=>v.checks[i]?`${m.name}: ${m.readings.join(' → ')} (${m.direction})`:'').filter(Boolean).map(esc).join('<br>')||'No numeric evidence saved'}</p>${observations?`<p>Data points:\n${esc(observations)}</p>`:''}</div>`;}).join('')}<div class="snapshot-section"><h4>Trade / contract record</h4><p>Entry: ${esc(x.entryPrice||'—')} · Target: ${esc(x.targetPrice||'—')} · Invalidation: ${esc(x.stopPrice||'—')}</p><p>Exit: ${esc(x.exitPrice||'—')} · Capital: ${esc(x.capital||'—')} · Shares: ${esc(x.quantity||'—')}</p>${['leaps','day'].includes(x.strategy)?`<p>${esc(x.optionType)} · Strike ${esc(x.strike||'—')} · Expiration ${esc(x.expiration||'—')} · Entry premium ${esc(x.premium||'—')} · Exit premium ${esc(x.exitPremium||'—')}</p>${x.strategy==='day'?`<p>Target premium ${esc(x.targetPremium||'—')} · Stop premium ${esc(x.stopPremium||'—')} · Delta ${esc(x.delta||'—')} · Gamma ${esc(x.gamma||'—')} · Theta ${esc(x.theta||'—')} · Vega ${esc(x.vega||'—')} · IV ${esc(x.ivPercent||'—')}%</p>`:''}`:''}<p>Lessons: ${esc(x.lesson||'Not recorded')}</p></div>`;
   $('snapshotDialog').showModal();
 }
 function restoreSnapshot(){
@@ -750,7 +884,7 @@ function updateField(target){
       renderList();
     }
     if(['ticker','company'].includes(key))planLookup(target);
-    if(key==='ticker')updateResearchLinks(e);
+    if(key==='ticker'){updateResearchLinks(e);updateDayLeadingLinks(e);}
     return;
   }
   const markerEl=target.closest('[data-marker-stage][data-marker-index]');
@@ -1042,9 +1176,9 @@ function setupEvents(){
   $('entrySearch').addEventListener('input',renderList);$('entryStatusFilter').addEventListener('change',renderList);
   $('entryList').addEventListener('click',e=>{const b=e.target.closest('[data-open-id]');if(!b)return;persist();app.selectedId=b.dataset.openId;renderList();renderEditor();});
   const editor=$('editorPanel');
-  editor.addEventListener('input',e=>{const t=e.target;if(t.matches('[data-field],[data-notes-stage],[data-data-field],[data-marker-input]'))updateField(t);});
+  editor.addEventListener('input',e=>{const t=e.target;if(!updateDayLeadingInput(t)&&t.matches('[data-field],[data-notes-stage],[data-data-field],[data-marker-input]'))updateField(t);});
   editor.addEventListener('change',e=>{
-    const t=e.target;if(t.matches('[data-field],[data-notes-stage],[data-data-field],[data-marker-input]')){
+    const t=e.target;if(updateDayLeadingChoice(t))return;if(t.matches('[data-field],[data-notes-stage],[data-data-field],[data-marker-input]')){
       updateField(t);
     }
     if(t.matches('[data-check-stage]')){const cur=current(),stage=cur?.stages[t.dataset.checkStage],i=Number(t.dataset.checkIndex);if(stage&&i>=0&&i<stage.checks.length){stage.checks[i]=t.checked;syncStageRating(cur,t.dataset.checkStage);autosave();rerenderEditor();}}
@@ -1053,7 +1187,7 @@ function setupEvents(){
   editor.addEventListener('click',e=>{
     const t=e.target,b=t.closest('button');if(!b)return;
     if(b.id==='emptyNewButton'){newEntry();return;}
-    if(b.id==='snapshotButton'){savedSnapshot();return;}
+    if(b.id==='snapshotButton'||b.hasAttribute('data-day-save-snapshot')){savedSnapshot();return;}
     if(b.id==='deleteButton'){deleteEntry();return;}
     if(b.id==='addLogButton'){addLog();return;}
     if(b.id==='refreshQuoteButton'){const cur=current();if(cur?.ticker)loadQuote(cur.ticker,cur.id,true);return;}
