@@ -19,6 +19,248 @@ const STAGES = [
   { key: 'technical', name: 'Technical Confirmation', description: 'Look for a defined setup rather than a guess.', checks: ['Primary trend / market structure confirmed', '20 / 50 / 200-day moving averages checked', 'Supply / demand zones marked', 'Volume / candlestick behavior assessed', 'FVG / imbalance / liquidity reviewed', 'Entry, invalidation, risk/reward considered'] },
   { key: 'options', name: 'Options Activity & Positioning', description: 'Review what options markets may be pricing in.', checks: ['Open interest / volume checked', 'Implied volatility / IV rank reviewed', 'Calls vs puts / positioning examined', 'Expected move / key expirations checked', 'Greeks / spread liquidity reviewed'] }
 ];
+/* Swings + LEAPS horizon-specific independent CALL/PUT research. */
+const HZN_DEFS = {
+  swings: [
+    {key:'technical',name:'PRICE ACTION & TECHNICALS',icon:'▥',weight:25,focus:'Daily / 4H trend, key levels and clean continuation or reversal',links:[['TradingView','chart'],['Technicals','technical']],call:[
+      ['Daily and 4H trend holds higher highs/lows','Daily and 4H are trending up, with pullbacks respecting higher lows.','chart'],
+      ['Price holds the 20/50-day moving average','Price reclaims or defends its trend-defining moving averages.','chart'],
+      ['Support or bullish FVG reacts with rejection','A mapped support, liquidity sweep or bullish fair-value gap attracts demand.','chart'],
+      ['Break of Structure / CHOCH turns bullish','A completed higher-timeframe candle reclaims a key prior swing high.','chart'],
+      ['Breakout or retest holds on rising volume','Price holds above resistance and participation supports follow-through.','chart']
+    ],put:[
+      ['Daily and 4H trend prints lower highs/lows','Daily and 4H show declining structure with weak rebounds.','chart'],
+      ['Price rejects the 20/50-day moving average','Important moving averages act as resistance during rallies.','chart'],
+      ['Resistance or bearish FVG rejects price','A mapped supply/FVG area rejects with selling candles.','chart'],
+      ['Break of Structure / CHOCH turns bearish','Completed 4H/daily candles break a meaningful previous swing low.','chart'],
+      ['Breakdown or retest fails on rising volume','Price fails to regain support as selling participation expands.','chart']
+    ]},
+    {key:'options',name:'OPTIONS & POSITIONING',icon:'▤',weight:20,focus:'Multi-session OI, flow, gamma zones and contract quality',links:[['Options chain','options'],['Gamma exposure','gex'],['Option flow','flow']],call:[
+      ['Multi-day call buying or put selling dominates','Compare aggressive ask-side calls and bid-side puts, not call volume alone.','flow'],
+      ['Relevant strike OI supports upside structure','Locate major call/put open-interest concentrations and changing strike interest.','options'],
+      ['Dealer GEX and walls favor the planned rise','Evaluate modeled GEX as an accelerant or stabilizer; negative GEX alone has no direction.','gex'],
+      ['CALL contract offers reasonable IV and spread','Check IV Rank, expiration, bid/ask, volume, OI, and delta for the proposed call.','options']
+    ],put:[
+      ['Multi-day put buying or call selling dominates','Check aggressor-side put buys and call sells, including multi-leg context.','flow'],
+      ['Relevant strike OI supports downside structure','Note OI concentrations and put/call walls near breakdown levels.','options'],
+      ['Dealer GEX and walls favor the planned drop','Gamma exposure can accelerate downside but needs bearish directional evidence.','gex'],
+      ['PUT contract offers reasonable IV and spread','Check IV Rank, expiration, bid/ask, volume, OI, and absolute delta.','options']
+    ]},
+    {key:'breadth',name:'MARKET BREADTH & PARTICIPATION',icon:'♟',weight:20,focus:'Sector leadership, market internals and institutional flows',links:[['Market breadth','breadth'],['Sector map','sectors']],call:[
+      ['Advancers and up-volume broaden','More constituents participate in rising prices rather than just mega-caps.','breadth'],
+      ['60–75%+ of stocks above key averages','Check percent of index/sector components above 20/50/200-day MAs and trend.','breadth'],
+      ['Semis and the target sector lead','Compare SMH/QQQ/sector relative performance to the index.','sectors'],
+      ['Institutional demand / ETF inflows improve','Check accumulation days, ETF flows, and relative volume over several sessions.','sectors']
+    ],put:[
+      ['Decliners and down-volume broaden','An expanding share of constituents participates in the decline.','breadth'],
+      ['Breadth below key averages deteriorates','Percent above 20/50/200-day MAs falls rather than stabilizes.','breadth'],
+      ['Semis and the target sector lag','SMH/QQQ and sector relative strength deteriorate versus market.','sectors'],
+      ['Institutional outflows / distribution rise','Heavy selling days, ETF outflows, or weak accumulation trends.','sectors']
+    ]},
+    {key:'macro',name:'MACRO, GEOPOLITICS & NEWS',icon:'◎',weight:15,focus:'Catalysts over the next 3–20 sessions and policy risk',links:[['Economic calendar','econ'],['FedWatch','fedwatch'],['Company news','news']],call:[
+      ['Upcoming catalyst is constructive or beats','Earnings, CPI/PCE, GDP, jobs, Fed or company news support upside versus expectations.','econ'],
+      ['Rate/yield expectations favor the trade','Check rate-change expectations and real yield movement; ask why yields moved.','fedwatch'],
+      ['Corporate guidance / analyst revisions improve','Monitor guidance, orders, margins, upgrades, and sector-specific news.','news'],
+      ['Geopolitical or regulatory stress eases','Document timestamped de-escalation or reduced company-specific risk.','news']
+    ],put:[
+      ['Catalyst disappoints or forecasts worsen','Verified misses or hawkish surprises challenge expectations.','econ'],
+      ['Rates/yields or credit stress pressure equities','Higher discount rates, credit widening, or growth concern may weigh on price.','fred'],
+      ['Guidance or company-specific risk deteriorates','Weak guidance, downgrades, margins, litigation or regulation.','news'],
+      ['Geopolitical / trade tensions intensify','New sanctions, escalation, shipping/oil disruptions, or trade restrictions.','news']
+    ]},
+    {key:'volatility',name:'VOLATILITY & SENTIMENT',icon:'∿',weight:10,focus:'IV cost, VIX/VXN, ATR and sentiment for the holding period',links:[['IV and options','iv'],['VIX','vix'],['Chart','chart']],call:[
+      ['VIX/VXN eases or diverges lower','Volatility falls or stops confirming lower lows; not a guaranteed bottom.','vix'],
+      ['IV Rank and option cost are acceptable','Current IV and skew allow a sensible option entry for 1–4+ weeks.','iv'],
+      ['Daily ATR leaves plausible upside room','Targets fit 4H/daily ATR and nearby supply, rather than an unrealistic move.','chart'],
+      ['Sentiment shifts from fear toward demand','Fear/Greed, positioning, or breadth suggest improving appetite.','breadth']
+    ],put:[
+      ['VIX/VXN rises with market weakness','Volatility expands and confirms bearish price behavior.','vix'],
+      ['IV / skew change favors selected PUT','Price option premium and risk, including costly put skew and time decay.','iv'],
+      ['Daily ATR and range favor lower levels','Downside targets fit realistic ATR moves and lower support.','chart'],
+      ['Sentiment shifts toward distribution','Rising risk aversion, weaker positioning, or crowded-long unwind.','breadth']
+    ]},
+    {key:'historical',name:'HISTORICAL & SEASONAL CONTEXT',icon:'▣',weight:10,focus:'3–20-day patterns, earnings, OPEX and similar historical setups',links:[['Price history','history'],['Seasonality','seasonality']],call:[
+      ['Comparable setups previously followed through','Research a comparable sample and look at next 3–20 trading-day returns.','history'],
+      ['Seasonal period supports upside','Check week/month tendencies and whether recent macro conditions match.','seasonality'],
+      ['Post-OPEX or catalyst pattern favors buying','Compare actual past options-expiry/earnings reactions, not assumptions.','history'],
+      ['Trend stage supports another leg higher','Check phase of broader cycle, duration and pullback context.','chart']
+    ],put:[
+      ['Comparable setups previously broke down','Research similar breakdowns and next 3–20-session results.','history'],
+      ['Seasonal period supports weakness','Validate historical effect within current trend and market regime.','seasonality'],
+      ['Post-OPEX or catalyst pattern favors selling','Compare documented expiry and announcement responses.','history'],
+      ['Trend stage suggests extended weakness','Late-stage rally, distribution, lower highs, or failed support over multiple weeks.','chart']
+    ]}
+  ],
+  leaps: [
+    {key:'technical',name:'LONG-TERM TECHNICALS',icon:'▥',weight:20,focus:'Weekly/daily structure, 50/200-day MA and valuation entry zones',links:[['Weekly chart','chart'],['Technicals','technical']],call:[
+      ['Weekly trend supports accumulation','Weekly higher lows or a credible basing/reversal structure, not just a single green day.','chart'],
+      ['Daily/weekly reclaim or hold major averages','Review 50/200-day average slope and major weekly resistance.','chart'],
+      ['Major support / weekly bullish FVG holds','Support zone provides defensible invalidation and a favorable entry.','chart'],
+      ['1–2-year upside to realistic levels exists','Check major supply zones and underlying price targets relative to option breakeven.','chart']
+    ],put:[
+      ['Weekly trend is structurally bearish','Series of lower highs/lows with persistent downside momentum.','chart'],
+      ['Major daily/weekly averages act as resistance','Repeated 50/200-day rejections or failed retests.','chart'],
+      ['Weekly supply / bearish FVG rejects','A major supply level offers a logical invalidation point for the put.','chart'],
+      ['Multi-month downside has room to develop','Potential downside target is meaningful relative to option time and premium.','chart']
+    ]},
+    {key:'options',name:'LEAPS OPTIONS & POSITIONING',icon:'▤',weight:15,focus:'Expiration, delta, IV Rank, spread, OI and breakeven',links:[['Option chain','options'],['IV & Rank','iv'],['Flow','flow']],call:[
+      ['CALL delta near 0.70–0.80 (or documented)','Check actual delta for selected expiration; preference is 0.70–0.80, not a requirement.','options'],
+      ['IV Rank relatively low (ideally under 30)','Compare current IV Rank to the contract and stock history; verify current quote.','iv'],
+      ['Bid/ask spread and OI allow entry/exit','Calculate spread percentage, open interest, and activity in exact June/other LEAPS contract.','options'],
+      ['Expiration leaves enough time; breakeven viable','Compare thesis timeframe, theta, contract cost and expiration breakeven.','options']
+    ],put:[
+      ['PUT delta magnitude near 0.70–0.80','Check absolute delta on the selected negative-delta put.','options'],
+      ['IV Rank / downside skew pricing acceptable','Compare options cost and downside skew; expensive IV can offset a correct thesis.','iv'],
+      ['PUT spread and OI permit practical exits','Evaluate contract-specific volume/OI and bid/ask width.','options'],
+      ['Expiration and breakeven fit bearish thesis','Have sufficient time to capture downside and a plausible strike-plus-premium outcome.','options']
+    ]},
+    {key:'breadth',name:'SECTOR & MARKET PARTICIPATION',icon:'♟',weight:10,focus:'Sustained leadership and long-term capital allocation',links:[['Sector map','sectors'],['Breadth','breadth']],call:[
+      ['Sector leadership improving over 1–6 months','Relative strength of company industry vs SPX/NDX strengthens.','sectors'],
+      ['Market breadth improves above 50/200 MA','Broad participation supports multi-month trend; check trend of breadth, not one reading.','breadth'],
+      ['Industry investment and fund flows strengthen','ETF flows, capex, and institutional demand align with the thesis.','sectors'],
+      ['Leading peers confirm opportunity','Compare company against industry peers and major sector names.','sectors']
+    ],put:[
+      ['Sector leadership deteriorates over months','Relative strength and industry trend weaken vs broad indices.','sectors'],
+      ['Breadth below 50/200 MA deteriorates','Fewer sector/index constituents sustain long-term trends.','breadth'],
+      ['Industry / fund flows retreat','Capital allocation or institutional demand shifts elsewhere.','sectors'],
+      ['Peers confirm structural weakness','Multiple industry competitors show the same problems.','sectors']
+    ]},
+    {key:'macro',name:'ECONOMIC CYCLE & FUNDAMENTALS',icon:'◎',weight:35,focus:'GDP, rates, company fundamentals, moat, earnings and valuation',links:[['Financial statements','financials'],['SEC filings','sec'],['Macro data','macro']],call:[
+      ['Economic cycle supports demand growth','Check expansion/contraction, GDP, rates, employment, and the company’s demand drivers.','macro'],
+      ['Revenue, EPS and guidance are improving','Verify annual/quarterly reports, subscriptions/orders/backlog and forward guidance.','financials'],
+      ['FCF, margins and balance sheet are healthy','Check cash generation, margins, debt maturity, ROIC, and dilution.','financials'],
+      ['Valuation allows upside versus fundamentals','Assess forward earnings/FCF, peers and historical multiples; expensive does not mean safe.','financials'],
+      ['Moat, market share and multi-year catalysts support','Note durable competitive advantage, secular growth, regulatory shifts and catalyst timing.','sec'],
+      ['Macro, geopolitics, policy are constructive','Evaluate rates, tariffs, geopolitics, sector policy and earnings catalysts.','macro']
+    ],put:[
+      ['Economic cycle threatens company demand','Slowing demand, credit strain, employment deterioration, or unfavorable rate trends.','macro'],
+      ['Revenue/EPS or forward guidance deteriorates','Weak growth, cancellations, backlog deceleration, negative revisions.','financials'],
+      ['FCF, margins or balance sheet deteriorate','Margin squeeze, debt, weak cash generation or dilution risk.','financials'],
+      ['Valuation remains vulnerable to compression','Multiple is unjustified relative to growth, rates and historical valuation.','financials'],
+      ['Competitive position / market share weakens','Disruption, pricing pressure, regulation, or persistent share losses.','sec'],
+      ['Macro, geopolitics, policy create headwinds','Sustained policy and demand risks may compound over months.','macro']
+    ]},
+    {key:'volatility',name:'LONG-DATED VOLATILITY & RISK',icon:'∿',weight:10,focus:'IV Rank, option premium, theta, drawdown and sizing',links:[['Volatility history','iv'],['VIX','vix']],call:[
+      ['IV Rank low enough for your entry strategy','Prefer relatively low IV Rank and compare actual term structure.','iv'],
+      ['Premium / theta acceptable for the time remaining','Model option value scenarios if price stalls or IV falls.','options'],
+      ['Position size respects total premium risk','Worst-case long-option loss = premium paid; define capital allocation.','options'],
+      ['Expected move and drawdown fit thesis','Study 1–2-year volatility, interim dips, event timing and liquidity.','iv']
+    ],put:[
+      ['Long-dated PUT IV / skew is affordable','Verify put skew and compare implied vs realized volatility.','iv'],
+      ['Premium / theta acceptable for bearish timing','Model adverse rallies, time decay, and downside targets.','options'],
+      ['Position size respects premium-at-risk','Full premium can be lost; define size, invalidation and exit criteria.','options'],
+      ['Expected move and squeezes considered','Study upside squeeze potential against multi-month bearish thesis.','iv']
+    ]},
+    {key:'historical',name:'HISTORICAL & CYCLE CONTEXT',icon:'▣',weight:10,focus:'Company track record, cycle alignment and long-range outcomes',links:[['Price history','history'],['Reports','sec']],call:[
+      ['Past economic-cycle stage supports upside','Compare prior expansion/recovery patterns with similar rate/growth regimes.','macro'],
+      ['Long-term earnings / FCF trend has delivered','Check 3–5-year business trajectory with year-over-year consistency.','financials'],
+      ['Valuation and price history support the case','Study historical multiples, corrections, and post-drawdown recovery.','history'],
+      ['Upcoming long-duration catalysts are mapped','Map earnings, product launches, spending cycles and rate milestones before expiry.','sec']
+    ],put:[
+      ['Past economic cycles show downside vulnerability','Identify business sensitivity during slowing growth or rate stress.','macro'],
+      ['Long-run earnings / FCF quality has deteriorated','Look for multi-year trend deterioration, not one bad quarter.','financials'],
+      ['Historical valuation / price remains stretched','Compare prior multiple contractions and long-term drawdowns.','history'],
+      ['Long-duration risks cluster before expiration','Map debt refinancing, regulation, competition and recurring catalysts.','sec']
+    ]}
+  ]
+};
+const HZN_SOURCES={
+ chart:['TradingView chart','https://www.tradingview.com/chart/?symbol='],
+ technical:['Barchart technicals','https://www.barchart.com/stocks/quotes/'],
+ options:['Barchart options chain','https://www.barchart.com/stocks/quotes/'],
+ iv:['Barchart volatility','https://www.barchart.com/stocks/quotes/'],
+ gex:['Barchart gamma','https://www.barchart.com/stocks/quotes/'],
+ flow:['ChartExchange options flow','https://chartexchange.com/option-flow/'],
+ breadth:['Barchart market breadth','https://www.barchart.com/stocks/market-performance'],
+ sectors:['Finviz sector groups','https://finviz.com/groups?g=sector&v=140'],
+ econ:['BLS release calendar','https://www.bls.gov/schedule/news_release/'],
+ fedwatch:['CME FedWatch','https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html'],
+ fed:['Federal Reserve','https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm'],
+ news:['Finviz ticker news','https://finviz.com/quote.ashx?t='],
+ vix:['Cboe VIX','https://www.cboe.com/tradable_products/vix/'],
+ history:['StockAnalysis history','https://stockanalysis.com/stocks/'],
+ seasonality:['Barchart seasonal chart','https://www.barchart.com/stocks/quotes/'],
+ financials:['StockAnalysis financials','https://stockanalysis.com/stocks/'],
+ sec:['SEC EDGAR','https://www.sec.gov/edgar/search/'],
+ macro:['BEA data','https://www.bea.gov/data']
+};
+function hznResearchLink(kind,entry){
+ const raw=String(entry?.ticker||'').trim().toUpperCase(),sym=/^[A-Z][A-Z0-9.\-]{0,11}$/.test(raw)?raw:'';
+ if(kind==='chart')return HZN_SOURCES.chart[1]+encodeURIComponent(sym||'NASDAQ:NDX');
+ if(kind==='technical')return sym?HZN_SOURCES.technical[1]+encodeURIComponent(sym)+'/technical-analysis':'https://www.barchart.com/stocks';
+ if(kind==='options')return sym?HZN_SOURCES.options[1]+encodeURIComponent(sym)+'/options':'https://www.barchart.com/options';
+ if(kind==='iv')return sym?HZN_SOURCES.iv[1]+encodeURIComponent(sym)+'/volatility-charts':'https://www.barchart.com/options';
+ if(kind==='gex')return sym?HZN_SOURCES.gex[1]+encodeURIComponent(sym)+'/gamma-exposure':'https://www.barchart.com/options';
+ if(kind==='news')return sym?HZN_SOURCES.news[1]+encodeURIComponent(sym):'https://finviz.com/';
+ if(kind==='history')return sym?HZN_SOURCES.history[1]+encodeURIComponent(sym.toLowerCase())+'/history/':'https://stockanalysis.com/';
+ if(kind==='seasonality')return sym?HZN_SOURCES.seasonality[1]+encodeURIComponent(sym)+'/seasonality-chart':'https://www.barchart.com/stocks';
+ if(kind==='financials')return sym?HZN_SOURCES.financials[1]+encodeURIComponent(sym.toLowerCase())+'/financials/':'https://stockanalysis.com/';
+ return HZN_SOURCES[kind]?.[1]||'https://www.barchart.com/';
+}
+function blankHorizon(strategy){return {bias:'',notes:'',sections:Object.fromEntries((HZN_DEFS[strategy]||[]).map(g=>[g.key,{call:g.call.map(()=>false),put:g.put.map(()=>false),notes:'',source:''}]))};}
+function normalizeHorizon(raw,strategy){const d=blankHorizon(strategy);if(!raw||typeof raw!=='object')return d;
+ d.bias=['call','put','range'].includes(raw.bias)?raw.bias:'';d.notes=plain(raw.notes,15000);
+ for(const g of HZN_DEFS[strategy]||[]){const x=raw.sections?.[g.key]||{},y=d.sections[g.key];y.call=g.call.map((_,i)=>x.call?.[i]===true);y.put=g.put.map((_,i)=>x.put?.[i]===true);y.notes=plain(x.notes,12000);y.source=plain(x.source,2500);}return d;
+}
+function hznScore(e){const defs=HZN_DEFS[e?.strategy]||[];const val=e?.horizonConfluence||blankHorizon(e?.strategy);const result={call:0,put:0,callChecked:0,putChecked:0,total:0,groups:[]};
+ for(const g of defs){const v=val.sections[g.key];const c=v.call.filter(Boolean).length,p=v.put.filter(Boolean).length;result.call+=g.weight*c/g.call.length;result.put+=g.weight*p/g.put.length;result.callChecked+=c;result.putChecked+=p;result.total+=g.call.length+g.put.length;result.groups.push({key:g.key,call:Math.round(g.weight*c/g.call.length*10)/10,put:Math.round(g.weight*p/g.put.length*10)/10,weight:g.weight});}
+ result.call=Math.round(result.call);result.put=Math.round(result.put);return result;}
+function hznTier(n){return n>=75?'75+ · INVESTIGATE / PLAN':n>=60?'60–74 · DEVELOPING':'UNDER 60 · BUILD EVIDENCE';}
+
+function hznLink(kind,e,label,cls='hzn-resource'){
+ const url=hznResearchLink(kind,e);return `<a class="${cls}" data-hzn-kind="${esc(kind)}" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="${esc(label||HZN_SOURCES[kind]?.[0]||'Research')} — opens in another tab">↗ ${esc(label||HZN_SOURCES[kind]?.[0]||'Source')}</a>`;
+}
+function hznHelp(label,help,kind,e){return `<details class="hzn-help"><summary aria-label="Explain ${esc(label)}" title="What to look for: ${esc(help)}">ⓘ</summary><div class="hzn-help-body"><strong>${esc(label)}</strong><p>${esc(help)}</p>${hznLink(kind,e,'Check the data')}<a class="hzn-resource hzn-study-link" href="${esc('https://www.google.com/search?q='+encodeURIComponent(label+' trading indicator definition educational guide'))}" target="_blank" rel="noopener noreferrer">↗ Learn this term</a></div></details>`;}
+function hznCheckRows(g,side,e){const st=e.horizonConfluence.sections[g.key],items=g[side];return items.map((it,i)=>`<div class="hzn-check-row"><label class="hzn-check-label"><input type="checkbox" data-hzn-check="${side}" data-hzn-group="${g.key}" data-hzn-index="${i}" ${st[side][i]?'checked':''} /><span>${esc(it[0])}</span></label>${hznHelp(it[0],it[1],it[2],e)}<a href="${esc(hznResearchLink(it[2],e))}" data-hzn-kind="${esc(it[2])}" class="hzn-open-source" title="Open data or learning resource for ${esc(it[0])}" aria-label="Research ${esc(it[0])}" target="_blank" rel="noopener noreferrer">↗</a></div>`).join('');}
+function hznGroupMarkup(g,e,index){const d=e.horizonConfluence.sections[g.key],callChecked=d.call.filter(Boolean).length,putChecked=d.put.filter(Boolean).length;
+ return `<article class="hzn-group" data-hzn-card="${g.key}"><div class="hzn-group-header"><div class="hzn-group-heading"><span class="hzn-num">${index+1}</span><span class="hzn-group-icon" aria-hidden="true">${esc(g.icon)}</span><div><h5>${esc(g.name)} <span>(${g.weight}%)</span></h5><p>${esc(g.focus)}</p></div></div><div class="hzn-group-links">${g.links.map(a=>hznLink(a[1],e,a[0])).join('')}</div></div>
+ <div class="hzn-two-col"><section class="hzn-direction hzn-direction-call"><div class="hzn-col-title"><span>↗ CALL · What to look for</span><span>${callChecked}/${g.call.length}</span></div>${hznCheckRows(g,'call',e)}</section><section class="hzn-direction hzn-direction-put"><div class="hzn-col-title"><span>↘ PUT · What to look for</span><span>${putChecked}/${g.put.length}</span></div>${hznCheckRows(g,'put',e)}</section></div>
+ <details class="hzn-evidence-notes"><summary>✎ My findings, conflicting evidence &amp; research source</summary><div class="hzn-note-fields"><label>Findings and interpretation<textarea rows="2" data-hzn-notes="${g.key}" placeholder="What did the indicators actually show? Record dates, values and contradictions.">${esc(d.notes)}</textarea></label><label>Evidence source URL<input type="url" data-hzn-source="${g.key}" value="${esc(d.source)}" placeholder="https://…"></label></div>${safeUrl(d.source)?`<div class="hzn-source-inline"><a href="${esc(safeUrl(d.source))}" rel="noopener noreferrer" target="_blank">Open my saved source ↗</a></div>`:''}</details></article>`;
+}
+function hznTextInput(label,key,e,kind='text',hint=''){return `<label class="hzn-field"><span>${esc(label)}</span><input data-hzn-plan="${key}" type="${kind}" value="${esc(e[key]||'')}" ${kind==='number'?'step="any" inputmode="decimal"':''} placeholder="${esc(hint)}" /></label>`;}
+function hznPlanMarkup(e){const leaps=e.strategy==='leaps';return `<div class="hzn-aside-card"><div class="hzn-aside-head">▤ TRADE PLAN <small>Autosaved</small></div><div class="hzn-aside-body"><div class="hzn-plan-grid">
+ ${hznTextInput('Entry zone / price','entryPrice',e,'number','0.00')}${hznTextInput('Target 1','targetPrice',e,'number','0.00')}${hznTextInput('Invalidation / stop','stopPrice',e,'number','0.00')}
+ ${hznTextInput('Capital at risk','capital',e,'number','Amount')}${leaps?hznTextInput('Expiration','expiration',e,'date'):hznTextInput('Expected holding period','reviewDate',e,'date')}
+ </div><p class="hzn-plan-reminder">${leaps?'For long options, the entire premium paid can be lost. Record the exact contract and check its liquidity.':'Map your entry, target and invalidation on the underlying chart before reviewing the contract.'}</p>
+ ${leaps?`<div class="hzn-aside-subhead">LEAPS CONTRACT QUALITY</div><div class="hzn-plan-grid">
+ ${hznTextInput('Strike','strike',e,'number','Strike')}${hznTextInput('Delta','delta',e,'number','0.70–0.80 preference')}${hznTextInput('IV Rank %','ivRank',e,'number','Prefer low')}${hznTextInput('Premium / share','premium',e,'number','Option price')}${hznTextInput('Bid','bidPrice',e,'number','Bid')}${hznTextInput('Ask','askPrice',e,'number','Ask')}${hznTextInput('Open interest','openInterest',e,'number','Contracts')}${hznTextInput('Contracts','contracts',e,'number','Quantity')}
+ </div><div class="hzn-leaps-math" id="hznLeapsMath">${esc(hznLeapsStats(e))}</div>`:`<div class="hzn-aside-subhead">SWING TIMEFRAME</div><p class="hzn-plan-reminder"><strong>Days to weeks · 4H / Daily.</strong> Analyze 3–20 trading days and nearby events; the current market phase matters.</p>`}
+ <div class="hzn-aside-subhead">Research links</div><div class="hzn-aside-links">${hznLink('chart',e,'Chart')}${hznLink('options',e,'Option chain')}${hznLink('financials',e,'Financials')}${hznLink('econ',e,'Economic calendar')}</div><p class="hzn-plan-foot">Review the complete original journal below for detailed price, premium, execution and outcome records.</p></div></div>`;}
+function hznLeapsStats(e){const bid=Number(e.bidPrice),ask=Number(e.askPrice),cost=Number(e.premium),strike=Number(e.strike),n=Number(e.contracts),hasSpread=e.bidPrice!==''&&e.askPrice!==''&&Number.isFinite(bid)&&Number.isFinite(ask)&&ask>=bid&&ask>0;const spread=hasSpread?(ask-bid)/((ask+bid)/2)*100:null;
+ const typ=e.horizonConfluence?.bias==='put'?'PUT':'CALL',be=e.strike!==''&&e.premium!==''&&Number.isFinite(strike)&&Number.isFinite(cost)?strike+(typ==='CALL'?cost:-cost):null;
+ return `Quoted spread: ${spread===null?'Enter bid + ask':spread.toFixed(1)+'% of midpoint'} · Premium at risk: ${e.premium&&e.contracts&&Number.isFinite(cost)&&Number.isFinite(n)&&n>0?'$'+(cost*100*n).toLocaleString('en-US',{maximumFractionDigits:2}):'enter premium + contracts'} · Expiry breakeven (${typ}): ${be===null?'enter strike + premium':'$'+be.toFixed(2)}`;
+}
+function hznScoreCard(direction,score){const cl=direction==='call'?'call':'put',name=cl.toUpperCase();return `<div class="hzn-score-card ${cl}"><span>${name} CONFLUENCE</span><strong data-hzn-score="${cl}">${score}<small>/100</small></strong><div class="hzn-score-track"><div data-hzn-bar="${cl}" style="width:${score}%"></div></div><small data-hzn-tier="${cl}">${hznTier(score)}</small></div>`;}
+function horizonMarkup(e){if(!['swings','leaps'].includes(e.strategy))return '';
+ const defs=HZN_DEFS[e.strategy],sc=hznScore(e),leaps=e.strategy==='leaps';return `<section class="hzn-workspace" id="hznWorkspace" aria-label="${leaps?'LEAPS':'Swing trading'} independent CALL and PUT confluence checklist">
+ <div class="hzn-titlebar"><div><div class="hzn-goldtag">${leaps?'LEAPS · MONTHS TO YEARS':'SWINGS · DAYS TO WEEKS'}</div><h4>${leaps?'LEAPS Investment':'Swing Trade'} Research &amp; Confluence</h4><p>${leaps?'Company fundamentals and economic cycle lead. Confirm the contract can survive the journey.':'4H and daily trends, sector leadership, options positioning, catalysts and institutional follow-through.'}</p></div><span class="hzn-titlebadge">✓ 75/100 = RESEARCH TRIGGER</span></div>
+ <div class="hzn-weights"><strong>WEIGHTED CATEGORY FRAMEWORK</strong>${defs.map(d=>`<span>${esc(d.name.replace(' & ',' + '))}<b>${d.weight}%</b></span>`).join('')}</div>
+ <div class="hzn-workspace-grid"><div class="hzn-main"><div class="hzn-table-heading"><span>INDICATOR CATEGORY · WHAT TO LOOK FOR</span><span>↗ CALL (BULLISH) / ↘ PUT (BEARISH)</span></div>${defs.map((g,i)=>hznGroupMarkup(g,e,i)).join('')}
+ <div class="hzn-foot-note"><strong>ⓘ Check only the evidence you verified.</strong> Click the information icon for an explanation, or ↗ to study the indicator. Evidence that indicates potential *speed* (such as negative GEX) must be paired with directional evidence.</div>
+ </div><aside class="hzn-aside"><div class="hzn-aside-card"><div class="hzn-aside-head">◎ ${leaps?'LEAPS':'SWING'} CONFLUENCE SCORE</div><div class="hzn-scores">${hznScoreCard('call',sc.call)}${hznScoreCard('put',sc.put)}</div><p class="hzn-score-explainer">Both directions scored independently across ${defs.length} weighted categories. These scores measure selected support, not profit odds.</p><div class="hzn-aside-subhead">Directional outlook</div><div class="hzn-bias-options">
+ ${[['call','↗ Primary CALL thesis'],['put','↘ Primary PUT thesis'],['range','↔ Range / no trade']].map(([k,label])=>`<label class="${e.horizonConfluence.bias===k?'selected':''}"><input type="radio" name="hznBias" data-hzn-bias value="${k}" ${e.horizonConfluence.bias===k?'checked':''}/> ${label}</label>`).join('')}
+ </div><p class="hzn-score-explainer"><strong>75+</strong> — investigate and build a conditional trade plan; 60–74 — developing. Opposing evidence remains visible.</p></div>${hznPlanMarkup(e)}</aside></div>
+ </section>`;
+}
+function hznUpdateLinks(e){const root=$('hznWorkspace');if(!root)return;root.querySelectorAll('[data-hzn-kind]').forEach(a=>{a.href=hznResearchLink(a.dataset.hznKind,e);});}
+function hznRefresh(e){const sc=hznScore(e),root=$('hznWorkspace');if(!root)return;
+ for(const side of ['call','put']){root.querySelector(`[data-hzn-score="${side}"]`).innerHTML=`${sc[side]}<small>/100</small>`;root.querySelector(`[data-hzn-bar="${side}"]`).style.width=sc[side]+'%';root.querySelector(`[data-hzn-tier="${side}"]`).textContent=hznTier(sc[side]);}
+ for(const g of HZN_DEFS[e.strategy]){const r=root.querySelector(`[data-hzn-card="${g.key}"]`);if(!r)continue;r.querySelector('.hzn-direction-call .hzn-col-title span:last-child').textContent=`${e.horizonConfluence.sections[g.key].call.filter(Boolean).length}/${g.call.length}`;r.querySelector('.hzn-direction-put .hzn-col-title span:last-child').textContent=`${e.horizonConfluence.sections[g.key].put.filter(Boolean).length}/${g.put.length}`;}
+}
+function hznHandleInput(t){const e=current();if(!e?.horizonConfluence)return false;
+ if(t.dataset.hznNotes){e.horizonConfluence.sections[t.dataset.hznNotes].notes=t.value;autosave();return true;}
+ if(t.dataset.hznSource){e.horizonConfluence.sections[t.dataset.hznSource].source=t.value;autosave();return true;}
+ if(t.dataset.hznPlan){const key=t.dataset.hznPlan;if(!Object.hasOwn(e,key))return false;e[key]=t.value;autosave();for(const match of document.querySelectorAll(`[data-field="${key}"]`)){match.value=t.value;}
+  const math=$('hznLeapsMath');if(math)math.textContent=hznLeapsStats(e);const risk=$('riskRewardText');if(risk)risk.textContent=riskReward(e);return true;
+ }
+ return false;
+}
+function hznHandleChange(t){const e=current();if(!e?.horizonConfluence)return false;
+ if(t.dataset.hznCheck){const side=t.dataset.hznCheck,g=t.dataset.hznGroup,i=Number(t.dataset.hznIndex),array=e.horizonConfluence.sections[g]?.[side];if(!array||!Number.isInteger(i)||i<0||i>=array.length)return true;array[i]=t.checked;autosave();hznRefresh(e);return true;}
+ if(t.hasAttribute('data-hzn-bias')){e.horizonConfluence.bias=t.value;if(e.strategy==='leaps')e.optionType=t.value==='put'?'Put':'Call';else if(e.strategy==='swings')e.direction=t.value==='put'?'Short':'Long';autosave();document.querySelectorAll('.hzn-bias-options label').forEach(label=>label.classList.toggle('selected',label.querySelector('input')?.checked));const math=$('hznLeapsMath');if(math)math.textContent=hznLeapsStats(e);return true;}
+ return false;
+}
+
 // Dedicated intraday framework; each checklist item owns a 3-reading numeric meter.
 // No automatic trades or fabricated real-time market/option chain data.
 const DAY_STAGES = [
@@ -347,6 +589,7 @@ function createEntry(strategy='swings') {
     optionType:'Call',expiration:'',strike:'',premium:'',contracts:'',delta:'',ivRank:'',reviewDate:'',allocation:'',
     gamma:'',theta:'',vega:'',ivPercent:'',bidPrice:'',askPrice:'',openInterest:'',optionVolume:'',expectedMove:'',targetPremium:'',stopPremium:'',maxDailyLoss:'',openingRangeHigh:'',openingRangeLow:'',vwap:'',setupTime:'',
     lastPrice:null,lastPriceCurrency:'USD',lastPriceAt:'',lastPriceSymbol:'',instrumentType:'EQUITY',dayLeading:strategy==='day'?blankDayLeading():null,
+    horizonConfluence:['swings','leaps'].includes(strategy)?blankHorizon(strategy):null,
     stages:Object.fromEntries(stageList({strategy}).map(s=>[s.key,emptyStage(s)])),logs:[],snapshots:[],createdAt:stamp,updatedAt:stamp};
 }
 function normalizeCore(raw) {
@@ -355,11 +598,12 @@ function normalizeCore(raw) {
   e.id=plain(raw.id,128)||makeId();
   for(const k of ['ticker','company','setup','thesis','invalidationReason','lesson','entryPrice','targetPrice','stopPrice','exitPrice','capital','quantity','exitPremium','openedDate','closedDate','expiration','strike','premium','contracts','delta','ivRank','reviewDate','allocation','lastPriceCurrency','lastPriceAt','lastPriceSymbol','instrumentType','gamma','theta','vega','ivPercent','bidPrice','askPrice','openInterest','optionVolume','expectedMove','targetPremium','stopPremium','maxDailyLoss','openingRangeHigh','openingRangeLow','vwap','setupTime']) e[k]=plain(raw[k]);
   if(e.strategy==='day')e.dayLeading=normalizeDayLeading(raw.dayLeading);
+  if(['swings','leaps'].includes(e.strategy))e.horizonConfluence=normalizeHorizon(raw.horizonConfluence,e.strategy);
   e.lastPrice=raw.lastPrice!==null&&Number.isFinite(Number(raw.lastPrice))&&Number(raw.lastPrice)>0?Number(raw.lastPrice):null;
   e.status=STATUSES.includes(raw.status)?raw.status:'Researching';
   e.decision=DECISIONS.includes(raw.decision)?raw.decision:'Undecided';
   e.direction=['Long','Short'].includes(raw.direction)?raw.direction:'Long';
-  e.timeframe=['4H','Daily','Weekly','Other'].includes(raw.timeframe)?raw.timeframe:'Daily';
+  e.timeframe=['4H','Daily','Weekly','Monthly','Other'].includes(raw.timeframe)?raw.timeframe:'Daily';
   e.optionType=['Call','Put'].includes(raw.optionType)?raw.optionType:'Call';
   e.createdAt=validDate(raw.createdAt)?raw.createdAt:e.createdAt;
   e.updatedAt=validDate(raw.updatedAt)?raw.updatedAt:e.updatedAt;
@@ -514,7 +758,7 @@ function refreshSummary(){
   for(const strategy of Object.keys(STRATEGIES))$('strategyTabs').querySelector(`[data-count="${strategy}"]`).textContent=app.entries.filter(e=>e.strategy===strategy).length;
   const items=app.entries.filter(e=>e.strategy===app.strategy);
   $('statEntries').textContent=items.length;
-  $('statEvidence').textContent=items.reduce((a,e)=>a+metrics(e).done,0);
+  $('statEvidence').textContent=items.reduce((a,e)=>a+metrics(e).done+(e.horizonConfluence?(hznScore(e).callChecked+hznScore(e).putChecked):0),0);
   $('statUpdates').textContent=items.reduce((a,e)=>a+e.logs.length+e.snapshots.length,0);
   const info=STRATEGIES[app.strategy];
   $('workspaceHeading').textContent=info.title;
@@ -547,7 +791,7 @@ function newEntry(){
   showToast('New analysis created. Your research saves automatically.');
 }
 function filteredItems(strategy,search,status){
-  const q=search.trim().toLowerCase();return app.entries.filter(e=>(strategy==='all'||e.strategy===strategy)&&(status==='all'||e.status===status)&&(!q||[e.ticker,e.company,e.setup,e.thesis,e.lesson,...Object.values(e.dayLeading?.signals||{}).map(d=>d.notes||''),e.dayLeading?.inputs?.thesis||'',...stageList(e).flatMap(s=>[e.stages[s.key].notes,...e.stages[s.key].data.flatMap(d=>[d.metric,d.value])]),...e.logs.map(l=>l.text)].join(' ').toLowerCase().includes(q))).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
+  const q=search.trim().toLowerCase();return app.entries.filter(e=>(strategy==='all'||e.strategy===strategy)&&(status==='all'||e.status===status)&&(!q||[e.ticker,e.company,e.setup,e.thesis,e.lesson,...Object.values(e.dayLeading?.signals||{}).map(d=>d.notes||''),e.dayLeading?.inputs?.thesis||'',...Object.values(e.horizonConfluence?.sections||{}).flatMap(v=>[v.notes||'',v.source||'']),...stageList(e).flatMap(s=>[e.stages[s.key].notes,...e.stages[s.key].data.flatMap(d=>[d.metric,d.value])]),...e.logs.map(l=>l.text)].join(' ').toLowerCase().includes(q))).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
 }
 function renderList(){
   const all=app.entries.filter(e=>e.strategy===app.strategy);
@@ -555,7 +799,7 @@ function renderList(){
   $('sidebarCount').textContent=`${all.length} ${all.length===1?'analysis':'analyses'}`;
   const el=$('entryList');
   if(!filtered.length){el.innerHTML=`<div class="sidebar-empty">${all.length?'No matching analyses. Try another search.':'No saved analyses yet.<br>Start one to build your research history.'}</div>`;return;}
-  el.innerHTML=filtered.map(e=>{const m=metrics(e);return `<button type="button" class="entry-card ${e.id===app.selectedId?'selected':''}" data-open-id="${esc(e.id)}" aria-current="${e.id===app.selectedId?'true':'false'}"><span class="entry-card-head"><strong class="ticker">${esc(e.ticker.trim().toUpperCase()||'UNTITLED')}</strong><span class="status-pill ${esc(e.status)}">${esc(e.status)}</span></span><span class="entry-company">${esc(e.company||e.setup||'New investment analysis')}</span><span class="entry-bottom"><span>${m.done}/${m.total} checks</span><span>${shortDate(e.updatedAt)}</span></span><span class="mini-progress"><div style="width:${m.pct}%"></div></span></button>`;}).join('');
+  el.innerHTML=filtered.map(e=>{const m=metrics(e);return `<button type="button" class="entry-card ${e.id===app.selectedId?'selected':''}" data-open-id="${esc(e.id)}" aria-current="${e.id===app.selectedId?'true':'false'}"><span class="entry-card-head"><strong class="ticker">${esc(e.ticker.trim().toUpperCase()||'UNTITLED')}</strong><span class="status-pill ${esc(e.status)}">${esc(e.status)}</span></span><span class="entry-company">${esc(e.company||e.setup||'New investment analysis')}</span><span class="entry-bottom"><span>${e.horizonConfluence?`CALL ${hznScore(e).call} · PUT ${hznScore(e).put}`:`${m.done}/${m.total} checks`}</span><span>${shortDate(e.updatedAt)}</span></span><span class="mini-progress"><div style="width:${m.pct}%"></div></span></button>`;}).join('');
 }
 function field(label,name,value,extra=''){
   return `<div class="field ${extra.includes('full')?'full':''}"><label for="field-${name}">${esc(label)}</label><input id="field-${name}" data-field="${name}" type="text" value="${esc(value)}" ${extra.includes('placeholder=')?extra.match(/placeholder="[^"]*"/)?.[0]||'':''} maxlength="12000" /></div>`;
@@ -810,9 +1054,12 @@ function renderEditor(openOverride){
     <div class="editor-top"><div><p class="section-overline">INVESTMENT RESEARCH / ${esc(STRATEGIES[e.strategy].name.toUpperCase())}</p><h3>${esc(e.ticker.trim().toUpperCase()||'Untitled analysis')}${e.company?` <span class="muted">· ${esc(e.company)}</span>`:''}</h3><div class="editor-heading-meta"><span class="status-pill ${esc(e.status)}">${esc(e.status)}</span><span class="muted small">Updated ${dateLabel(e.updatedAt)}</span></div></div><div class="editor-actions"><button type="button" class="btn btn-secondary small-btn" id="snapshotButton">Save snapshot</button><button type="button" class="btn btn-danger small-btn" id="deleteButton">Delete</button></div></div>
     <section class="section-block"><div class="section-header"><h4>01 · Research idea</h4><span class="section-tag">AUTOSAVED</span></div><div class="form-grid">${field('Ticker / symbol','ticker',e.ticker)}${field('Company / asset','company',e.company)}${field('Idea / setup name','setup',e.setup)}${selectField('Research status','status',e.status,STATUSES)}</div>${quotePanelMarkup(e)}</section>
     ${e.strategy==='day'?dayLeadingMarkup(e):''}
+    ${horizonMarkup(e)}
+    ${e.horizonConfluence?'<details class="hzn-legacy" id="hznOldResearch"><summary>▤ Original five-step research meters &amp; notes · Expand for detailed historical readings</summary>':''}
     <section class="section-block"><div class="section-header"><div><h4>02 · ${e.strategy==='day'?'Five-stage intraday framework':'Five-step investment framework'}</h4><p>${e.strategy==='day'?'Readings show directional bias, not automatic entry approval. Record three intraday observations per checked marker.':'Check your evidence, enter the data, and assess the weight of your findings.'}</p></div></div>
       <div class="progress-section"><div class="progress-top"><span>Research checklist progress</span><strong id="progressPercent">${m.pct}%</strong></div><div class="progress-line"><div style="width:${m.pct}%" id="progressBar"></div></div><div class="progress-note" id="progressNote">${m.done} of ${m.total} prompts checked · ${m.rated} of ${stageList(e).length-(e.stages.options?.rating==='na'?1:0)} stages scored. Completion is not a buy signal.</div><div id="overallSignal">${meterMarkup(allSignals(e),true)}</div></div>
       ${e.strategy==='day'?'<div class="day-trade-focus"><strong>Enter only if the reward justifies the risk.</strong><p>For Calls, a bullish directional score may support the thesis; for Puts, a bearish score may support it. Neither implies positive expectancy. All markets and options inputs are manual; price lookup may be delayed.</p></div>':''}<div class="stage-list">${stageList(e).map((s,i)=>stageMarkup(e,s,i,opened.has(s.key))).join('')}</div></section>
+    ${e.horizonConfluence?'</details>':''}
     <section class="section-block"><div class="section-header"><div><h4>03 · Thesis &amp; decision</h4><p>Separate your analysis from your intended action.</p></div></div>
       <div class="form-grid">${textArea('My investment thesis','thesis',e.thesis,'Why this company, why this direction, and why now?')}${textArea('What would invalidate my thesis?','invalidationReason',e.invalidationReason,'Specify what would make you change your mind.')}${selectField('Current decision','decision',e.decision,DECISIONS)}</div>
       <div class="form-grid three" style="margin-top:12px">${field(e.strategy==='day'?'Underlying entry level':'Entry / purchase price','entryPrice',e.entryPrice)}${field(e.strategy==='day'?'Underlying price target':'Target price','targetPrice',e.targetPrice)}${field(e.strategy==='day'?'Underlying invalidation level':'Invalidation / stop price','stopPrice',e.stopPrice)}${field('Capital at risk / allocated','capital',e.capital)}${['leaps','day'].includes(e.strategy)?'':field('Number of shares / units','quantity',e.quantity)}${dateField('Position opened','openedDate',e.openedDate)}${dateField('Position closed','closedDate',e.closedDate)}${field('Exit / sale price','exitPrice',e.exitPrice)}</div><p class="outcome-note" id="riskRewardText">${esc(riskReward(e))}</p><p class="outcome-note" id="realizedText">${esc(outcomeText(e))}</p></section>
@@ -831,11 +1078,11 @@ function renderEditor(openOverride){
   }
 }
 function captureOpen(){return new Set([...$('editorPanel').querySelectorAll('details[data-stage][open]')].map(x=>x.dataset.stage));}
-function rerenderEditor(){const open=captureOpen();renderEditor(open);}
+function rerenderEditor(){const open=captureOpen(),legacy=$('hznOldResearch')?.open;renderEditor(open);if(legacy&&$('hznOldResearch'))$('hznOldResearch').open=true;}
 function renderHistory(){
   const filtered=filteredItems($('historyScope').value,$('historySearch').value,$('historyStatus').value),el=$('historyResults');
   if(!filtered.length){el.innerHTML='<div class="empty-history"><h4>No analyses found</h4><p>Save your first research idea or adjust the history filters.</p></div>';return;}
-  el.innerHTML=filtered.map(e=>{const m=metrics(e),summary=allSignals(e);return `<div class="history-item"><div><h4>${esc(e.ticker.trim().toUpperCase()||'UNTITLED')} <span class="muted">${esc(e.company)}</span></h4><p>${esc(e.setup||e.thesis.slice(0,150)||'No thesis recorded yet.')}</p><div class="history-facts"><span class="history-fact">${esc(STRATEGIES[e.strategy].name)}</span><span class="status-pill ${esc(e.status)}">${esc(e.status)}</span><span class="history-fact">${esc(e.decision)}</span><span class="history-fact">${m.done}/${m.total} checked</span>${e.strategy==='day'?`<span class="history-fact">${dayConfluenceStats(e.dayLeading).reviewed}/7 leading indicators</span>`:''}<span class="history-fact">${esc(summary.rating?summary.rating[0].toUpperCase()+summary.rating.slice(1):'Meter incomplete')}</span><span class="history-fact">${e.logs.length} updates · ${e.snapshots.length} snapshots</span>${realizedOutcome(e)?`<span class="history-fact">Return ${realizedOutcome(e).pct>=0?'+':''}${realizedOutcome(e).pct.toFixed(2)}%</span>`:''}</div></div><div class="history-actions"><span class="muted small">${shortDate(e.updatedAt)}</span><button type="button" class="btn btn-secondary small-btn" data-history-open="${esc(e.id)}">Open analysis</button></div></div>`;}).join('');
+  el.innerHTML=filtered.map(e=>{const m=metrics(e),summary=allSignals(e);return `<div class="history-item"><div><h4>${esc(e.ticker.trim().toUpperCase()||'UNTITLED')} <span class="muted">${esc(e.company)}</span></h4><p>${esc(e.setup||e.thesis.slice(0,150)||'No thesis recorded yet.')}</p><div class="history-facts"><span class="history-fact">${esc(STRATEGIES[e.strategy].name)}</span><span class="status-pill ${esc(e.status)}">${esc(e.status)}</span><span class="history-fact">${esc(e.decision)}</span><span class="history-fact">${m.done}/${m.total} checked</span>${e.strategy==='day'?`<span class="history-fact">${dayConfluenceStats(e.dayLeading).reviewed}/7 leading indicators</span>`:''}${e.horizonConfluence?`<span class="history-fact">CALL ${hznScore(e).call}/100 · PUT ${hznScore(e).put}/100</span>`:''}<span class="history-fact">${esc(summary.rating?summary.rating[0].toUpperCase()+summary.rating.slice(1):'Meter incomplete')}</span><span class="history-fact">${e.logs.length} updates · ${e.snapshots.length} snapshots</span>${realizedOutcome(e)?`<span class="history-fact">Return ${realizedOutcome(e).pct>=0?'+':''}${realizedOutcome(e).pct.toFixed(2)}%</span>`:''}</div></div><div class="history-actions"><span class="muted small">${shortDate(e.updatedAt)}</span><button type="button" class="btn btn-secondary small-btn" data-history-open="${esc(e.id)}">Open analysis</button></div></div>`;}).join('');
 }
 function savedSnapshot(){
   const e=current();if(!e)return;
@@ -851,7 +1098,7 @@ function showSnapshot(id){
   const e=current(),s=e?.snapshots.find(x=>x.id===id);if(!s)return;app.snapshotId=id;
   const x=s.data;
   $('snapshotModalTitle').textContent=`${x.ticker?.toUpperCase()||'Untitled'} · ${dateLabel(s.at)}`;
-  $('snapshotContent').innerHTML=`<div class="snapshot-section"><h4>Decision &amp; thesis</h4><p>Status: ${esc(x.status)} · Decision: ${esc(x.decision)}</p><p>${esc(x.thesis||'No thesis recorded')}</p><p>Invalidation: ${esc(x.invalidationReason||'Not recorded')}</p></div>${x.strategy==='day'&&x.dayLeading?`<div class="snapshot-section"><h4>Seven leading indicators · ${x.dayLeading.bias?x.dayLeading.bias.toUpperCase():'No bias'}</h4><p>${DAY_LEADING_SIGNALS.map(d=>{const a=x.dayLeading.signals[d.key];return `${d.name}: ${a.reviewed?'Reviewed':'Not reviewed'} · ${a.stance||'No assessment'} · ${a.notes||'No notes'}`;}).map(esc).join('<br>')}</p><p>RVOL: ${esc(dayRvol(x.dayLeading)?.toFixed(2)||'not entered')}× · Daily ATR used: ${esc(dayAtrUse(x.dayLeading)?.toFixed(1)||'not entered')}%</p><p>Trade thesis: ${esc(x.dayLeading.inputs.thesis||'Not recorded')}</p></div>`:''}${stageList(x).map(st=>{const v=x.stages[st.key];const observations=v.data.map(d=>`${d.metric}: ${d.value}${d.source?` (${d.source})`:''}`).join('\n');const snapshotScore=stageSignal(x,st.key);return `<div class="snapshot-section"><h4>${esc(st.name)} · ${esc(snapshotScore.rating||'Insufficient readings')} · ${v.checks.filter(Boolean).length}/${st.checks.length} checked</h4><p>${esc(v.notes||'No analysis notes')}</p><p>${v.markers.map((m,i)=>v.checks[i]?`${m.name}: ${m.readings.join(' → ')} (${m.direction})`:'').filter(Boolean).map(esc).join('<br>')||'No numeric evidence saved'}</p>${observations?`<p>Data points:\n${esc(observations)}</p>`:''}</div>`;}).join('')}<div class="snapshot-section"><h4>Trade / contract record</h4><p>Entry: ${esc(x.entryPrice||'—')} · Target: ${esc(x.targetPrice||'—')} · Invalidation: ${esc(x.stopPrice||'—')}</p><p>Exit: ${esc(x.exitPrice||'—')} · Capital: ${esc(x.capital||'—')} · Shares: ${esc(x.quantity||'—')}</p>${['leaps','day'].includes(x.strategy)?`<p>${esc(x.optionType)} · Strike ${esc(x.strike||'—')} · Expiration ${esc(x.expiration||'—')} · Entry premium ${esc(x.premium||'—')} · Exit premium ${esc(x.exitPremium||'—')}</p>${x.strategy==='day'?`<p>Target premium ${esc(x.targetPremium||'—')} · Stop premium ${esc(x.stopPremium||'—')} · Delta ${esc(x.delta||'—')} · Gamma ${esc(x.gamma||'—')} · Theta ${esc(x.theta||'—')} · Vega ${esc(x.vega||'—')} · IV ${esc(x.ivPercent||'—')}%</p>`:''}`:''}<p>Lessons: ${esc(x.lesson||'Not recorded')}</p></div>`;
+  $('snapshotContent').innerHTML=`<div class="snapshot-section"><h4>Decision &amp; thesis</h4><p>Status: ${esc(x.status)} · Decision: ${esc(x.decision)}</p><p>${esc(x.thesis||'No thesis recorded')}</p><p>Invalidation: ${esc(x.invalidationReason||'Not recorded')}</p></div>${x.horizonConfluence?`<div class="snapshot-section"><h4>${x.strategy==='swings'?'SWING':'LEAPS'} CONFLUENCE · CALL ${hznScore(x).call}/100 · PUT ${hznScore(x).put}/100</h4><p>Research focus: ${esc(x.horizonConfluence.bias||'Not chosen')}</p>${HZN_DEFS[x.strategy].map(g=>{const v=x.horizonConfluence.sections[g.key];return `<p><strong>${esc(g.name)} (${g.weight}%)</strong> · CALL: ${v.call.filter(Boolean).length}/${g.call.length}, PUT: ${v.put.filter(Boolean).length}/${g.put.length}<br>CALL supporting evidence: ${esc(g.call.filter((_,i)=>v.call[i]).map(x=>x[0]).join('; ')||'None recorded')}<br>PUT supporting evidence: ${esc(g.put.filter((_,i)=>v.put[i]).map(x=>x[0]).join('; ')||'None recorded')}<br>Notes: ${esc(v.notes||'No additional notes')}<br>Source: ${esc(v.source||'Not recorded')}</p>`;}).join('')}</div>`:''}${x.strategy==='day'&&x.dayLeading?`<div class="snapshot-section"><h4>Seven leading indicators · ${x.dayLeading.bias?x.dayLeading.bias.toUpperCase():'No bias'}</h4><p>${DAY_LEADING_SIGNALS.map(d=>{const a=x.dayLeading.signals[d.key];return `${d.name}: ${a.reviewed?'Reviewed':'Not reviewed'} · ${a.stance||'No assessment'} · ${a.notes||'No notes'}`;}).map(esc).join('<br>')}</p><p>RVOL: ${esc(dayRvol(x.dayLeading)?.toFixed(2)||'not entered')}× · Daily ATR used: ${esc(dayAtrUse(x.dayLeading)?.toFixed(1)||'not entered')}%</p><p>Trade thesis: ${esc(x.dayLeading.inputs.thesis||'Not recorded')}</p></div>`:''}${stageList(x).map(st=>{const v=x.stages[st.key];const observations=v.data.map(d=>`${d.metric}: ${d.value}${d.source?` (${d.source})`:''}`).join('\n');const snapshotScore=stageSignal(x,st.key);return `<div class="snapshot-section"><h4>${esc(st.name)} · ${esc(snapshotScore.rating||'Insufficient readings')} · ${v.checks.filter(Boolean).length}/${st.checks.length} checked</h4><p>${esc(v.notes||'No analysis notes')}</p><p>${v.markers.map((m,i)=>v.checks[i]?`${m.name}: ${m.readings.join(' → ')} (${m.direction})`:'').filter(Boolean).map(esc).join('<br>')||'No numeric evidence saved'}</p>${observations?`<p>Data points:\n${esc(observations)}</p>`:''}</div>`;}).join('')}<div class="snapshot-section"><h4>Trade / contract record</h4><p>Entry: ${esc(x.entryPrice||'—')} · Target: ${esc(x.targetPrice||'—')} · Invalidation: ${esc(x.stopPrice||'—')}</p><p>Exit: ${esc(x.exitPrice||'—')} · Capital: ${esc(x.capital||'—')} · Shares: ${esc(x.quantity||'—')}</p>${['leaps','day'].includes(x.strategy)?`<p>${esc(x.optionType)} · Strike ${esc(x.strike||'—')} · Expiration ${esc(x.expiration||'—')} · Entry premium ${esc(x.premium||'—')} · Exit premium ${esc(x.exitPremium||'—')}</p>${x.strategy==='day'?`<p>Target premium ${esc(x.targetPremium||'—')} · Stop premium ${esc(x.stopPremium||'—')} · Delta ${esc(x.delta||'—')} · Gamma ${esc(x.gamma||'—')} · Theta ${esc(x.theta||'—')} · Vega ${esc(x.vega||'—')} · IV ${esc(x.ivPercent||'—')}%</p>`:''}`:''}<p>Lessons: ${esc(x.lesson||'Not recorded')}</p></div>`;
   $('snapshotDialog').showModal();
 }
 function restoreSnapshot(){
@@ -885,7 +1132,8 @@ function updateField(target){
       renderList();
     }
     if(['ticker','company'].includes(key))planLookup(target);
-    if(key==='ticker'){updateResearchLinks(e);updateDayLeadingLinks(e);}
+    const mirror=document.querySelector(`[data-hzn-plan="${key}"]`);if(mirror&&mirror!==target)mirror.value=target.value;
+    if(key==='ticker'){updateResearchLinks(e);updateDayLeadingLinks(e);hznUpdateLinks(e);}
     return;
   }
   const markerEl=target.closest('[data-marker-stage][data-marker-index]');
@@ -1177,9 +1425,9 @@ function setupEvents(){
   $('entrySearch').addEventListener('input',renderList);$('entryStatusFilter').addEventListener('change',renderList);
   $('entryList').addEventListener('click',e=>{const b=e.target.closest('[data-open-id]');if(!b)return;persist();app.selectedId=b.dataset.openId;renderList();renderEditor();});
   const editor=$('editorPanel');
-  editor.addEventListener('input',e=>{const t=e.target;if(!updateDayLeadingInput(t)&&t.matches('[data-field],[data-notes-stage],[data-data-field],[data-marker-input]'))updateField(t);});
+  editor.addEventListener('input',e=>{const t=e.target;if(hznHandleInput(t))return;if(!updateDayLeadingInput(t)&&t.matches('[data-field],[data-notes-stage],[data-data-field],[data-marker-input]'))updateField(t);});
   editor.addEventListener('change',e=>{
-    const t=e.target;if(updateDayLeadingChoice(t))return;if(t.matches('[data-field],[data-notes-stage],[data-data-field],[data-marker-input]')){
+    const t=e.target;if(hznHandleChange(t))return;if(hznHandleInput(t))return;if(updateDayLeadingChoice(t))return;if(t.matches('[data-field],[data-notes-stage],[data-data-field],[data-marker-input]')){
       updateField(t);
     }
     if(t.matches('[data-check-stage]')){const cur=current(),stage=cur?.stages[t.dataset.checkStage],i=Number(t.dataset.checkIndex);if(stage&&i>=0&&i<stage.checks.length){stage.checks[i]=t.checked;syncStageRating(cur,t.dataset.checkStage);autosave();rerenderEditor();}}
