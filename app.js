@@ -1300,8 +1300,24 @@ function utEvents(){const root=$('ultimateView');$('ultimateNavButton').addEvent
  root.addEventListener('input',ev=>{const t=ev.target,e=utCurrent();if(!e)return;if(t.id==='utLibraryQuery'){ut.search=t.value;$('utLibraryList').innerHTML=utLibraryHTML(t.value);return;}if(t.hasAttribute('data-ut-group-note')){e.groups[t.dataset.utGroupNote].notes=t.value;utSave();return;}if(t.hasAttribute('data-ut-group-source')){e.groups[t.dataset.utGroupSource].source=t.value;utSave();return;}if(t.hasAttribute('data-ut-field')){const k=t.dataset.utField;e[k]=t.value;if(k==='ticker'){const next=t.value.toUpperCase();if(next!==e.ticker){e.lastPrice=null;e.lastPriceAt='';e.company='';const v=$('utQuoteValue'),st=$('utQuoteTime');if(v)v.textContent='Not loaded';if(st)st.textContent='Quote not yet verified';}e.ticker=next;const id=e.id;clearTimeout(ut.lookupTimer);clearTimeout(ut.quoteTimer);ut.lookupTimer=setTimeout(()=>utSearchTicker(t.value.trim(),id),280);if(isTicker(t.value.trim()))ut.quoteTimer=setTimeout(()=>utFetchQuote(e),1250);}utSave();}});
  root.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&ev.target.id==='utTicker')utShowSuggestions([]);});}
 
+// Dedicated deep link for the sixth page, plus reliable navigation back to existing pages.
+// Preserve the initial route before the normal Day Trading boot sequence runs.
+const openUltimateOnBoot = window.location.hash === '#ultimate';
 setupEvents();
 setupConfluenceEvents();
 utEvents();
 setStrategy('day');
 setView('journal');
+if (openUltimateOnBoot) showUltimate();
+window.addEventListener('hashchange', () => {
+  if (window.location.hash === '#ultimate' && !ut.active) showUltimate();
+});
+// Remove the deep link when switching to any other existing workspace.
+document.querySelectorAll('[data-strategy], #confluenceNavButton').forEach(button => {
+  button.addEventListener('click', () => {
+    if (window.location.hash === '#ultimate') {
+      try { window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search); }
+      catch (_) { window.location.hash = ''; }
+    }
+  });
+});
