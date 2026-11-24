@@ -1306,9 +1306,10 @@ const openUltimateOnBoot = window.location.hash === '#ultimate';
 setupEvents();
 setupConfluenceEvents();
 utEvents();
-setStrategy('day');
+setStrategy('swings');
 setView('journal');
-if (openUltimateOnBoot) showUltimate();
+// Open the first visible tab by default; old journal data remains untouched.
+if (openUltimateOnBoot || !window.location.hash) showUltimate();
 window.addEventListener('hashchange', () => {
   if (window.location.hash === '#ultimate' && !ut.active) showUltimate();
 });

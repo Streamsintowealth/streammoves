@@ -8,7 +8,13 @@
   <title>Stream Moves | Investment Checklist Journal</title>
   <link rel="icon" type="image/png" href="streammoves-official-s-logo.png" />
   <link rel="stylesheet" href="styles.css?v=ultimate-nav-20261123-b" />
-  <script src="app.js?v=ultimate-nav-20261123-b" defer></script>
+  <script src="app.js?v=streammoves-four-tabs-20261123" defer></script>
+  <style>
+    /* Navigation-only adjustment: four visible strategies, two per row on phones. */
+    #strategyTabs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    #strategyTabs [hidden] { display: none !important; }
+    @media (max-width: 600px) { #strategyTabs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  </style>
 </head>
 <body>
   <div class="app-shell">
@@ -43,9 +49,9 @@
           <p class="hero-side">Research first. Capital second.</p>
         </div>
         <nav class="strategy-tabs" id="strategyTabs" aria-label="Investment strategy">
-          <button class="strategy-tab active" type="button" data-strategy="day" aria-pressed="true">
-            <span class="tab-icon" aria-hidden="true">◷</span><span>DAY TRADING</span><span class="tab-count" data-count="day">0</span>
-          </button>
+          <a class="strategy-tab active" href="#ultimate" id="ultimateNavButton" data-ultimate-nav aria-pressed="true" style="text-decoration:none" title="Open the Ultimate Day Trade page">
+            <span class="tab-icon" aria-hidden="true">✦</span><span>ULTIMATE DAY TRADE</span><span class="tab-count" id="ultimateTabCount">0</span>
+          </a>
           <button class="strategy-tab" type="button" data-strategy="swings" aria-pressed="false">
             <span class="tab-icon" aria-hidden="true">↗</span><span>SWINGS</span><span class="tab-count" data-count="swings">0</span>
           </button>
@@ -55,12 +61,13 @@
           <button class="strategy-tab" type="button" data-strategy="long-term" aria-pressed="false">
             <span class="tab-icon" aria-hidden="true">▥</span><span>LONG TERM</span><span class="tab-count" data-count="long-term">0</span>
           </button>
-          <button class="strategy-tab" type="button" id="confluenceNavButton" data-confluence-nav aria-pressed="false">
+          <!-- Retained only for compatibility with existing saved entries and event handlers; not displayed in the navigation. -->
+          <button class="strategy-tab" type="button" data-strategy="day" aria-pressed="false" hidden aria-hidden="true" tabindex="-1">
+            <span class="tab-icon" aria-hidden="true">◷</span><span>DAY TRADING</span><span class="tab-count" data-count="day">0</span>
+          </button>
+          <button class="strategy-tab" type="button" id="confluenceNavButton" data-confluence-nav aria-pressed="false" hidden aria-hidden="true" tabindex="-1">
             <span class="tab-icon" aria-hidden="true">⇄</span><span>CALLS vs PUTS</span><span class="tab-count" id="confluenceTabCount">0</span>
           </button>
-          <a class="strategy-tab" href="#ultimate" id="ultimateNavButton" data-ultimate-nav aria-pressed="false" style="text-decoration:none" title="Open the Ultimate Day Trade page">
-            <span class="tab-icon" aria-hidden="true">✦</span><span>ULTIMATE DAY TRADE</span><span class="tab-count" id="ultimateTabCount">0</span>
-          </a>
         </nav>
       </div>
     </header>
