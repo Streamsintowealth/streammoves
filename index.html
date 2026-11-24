@@ -58,6 +58,9 @@
           <button class="strategy-tab" type="button" id="confluenceNavButton" data-confluence-nav aria-pressed="false">
             <span class="tab-icon" aria-hidden="true">⇄</span><span>CALLS vs PUTS</span><span class="tab-count" id="confluenceTabCount">0</span>
           </button>
+          <button class="strategy-tab" type="button" id="ultimateNavButton" data-ultimate-nav aria-pressed="false">
+            <span class="tab-icon" aria-hidden="true">✦</span><span>ULTIMATE DAY TRADE</span><span class="tab-count" id="ultimateTabCount">0</span>
+          </button>
         </nav>
       </div>
     </header>
@@ -125,6 +128,10 @@
           </aside>
           <section class="editor-panel confluence-editor" id="confluenceEditor" aria-label="Options confluence checklist"></section>
         </div>
+      </section>
+      <section id="ultimateView" class="ultimate-page hidden" aria-label="Ultimate Day Trade weighted CALL and PUT confluence journal">
+        <div id="ultimateContent"></div>
+        <span class="visually-hidden" id="utSavedCount">0</span>
       </section>
       <footer class="footer-note"><span>STREAM MOVES <span class="footer-gold">/</span> STREAMS INTO WEALTH</span><span>Private browser storage · Export backups regularly · Not a brokerage or live-data feed</span></footer>
     </main>
