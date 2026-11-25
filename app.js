@@ -589,13 +589,13 @@ function createEntry(strategy='swings') {
     optionType:'Call',expiration:'',strike:'',premium:'',contracts:'',delta:'',ivRank:'',reviewDate:'',allocation:'',
     gamma:'',theta:'',vega:'',ivPercent:'',bidPrice:'',askPrice:'',openInterest:'',optionVolume:'',expectedMove:'',targetPremium:'',stopPremium:'',maxDailyLoss:'',openingRangeHigh:'',openingRangeLow:'',vwap:'',setupTime:'',
     lastPrice:null,lastPriceCurrency:'USD',lastPriceAt:'',lastPriceSymbol:'',instrumentType:'EQUITY',dayLeading:strategy==='day'?blankDayLeading():null,
-    horizonConfluence:['swings','leaps'].includes(strategy)?blankHorizon(strategy):null,
+    horizonConfluence:['swings','leaps'].includes(strategy)?blankHorizon(strategy):null,marketCatalysts:MC_DEFAULT(),
     stages:Object.fromEntries(stageList({strategy}).map(s=>[s.key,emptyStage(s)])),logs:[],snapshots:[],createdAt:stamp,updatedAt:stamp};
 }
 function normalizeCore(raw) {
   if(!raw || typeof raw!=='object' || Array.isArray(raw)) throw Error('Invalid analysis entry');
   const e=createEntry(Object.hasOwn(STRATEGIES,raw.strategy)?raw.strategy:'swings');
-  e.id=plain(raw.id,128)||makeId();
+  e.id=plain(raw.id,128)||makeId();e.marketCatalysts=mcNormalize(raw.marketCatalysts);
   for(const k of ['ticker','company','setup','thesis','invalidationReason','lesson','entryPrice','targetPrice','stopPrice','exitPrice','capital','quantity','exitPremium','openedDate','closedDate','expiration','strike','premium','contracts','delta','ivRank','reviewDate','allocation','lastPriceCurrency','lastPriceAt','lastPriceSymbol','instrumentType','gamma','theta','vega','ivPercent','bidPrice','askPrice','openInterest','optionVolume','expectedMove','targetPremium','stopPremium','maxDailyLoss','openingRangeHigh','openingRangeLow','vwap','setupTime']) e[k]=plain(raw[k]);
   if(e.strategy==='day')e.dayLeading=normalizeDayLeading(raw.dayLeading);
   if(['swings','leaps'].includes(e.strategy))e.horizonConfluence=normalizeHorizon(raw.horizonConfluence,e.strategy);
@@ -782,7 +782,7 @@ function setView(view){
   document.querySelectorAll('[data-view]').forEach(b=>{const active=b.dataset.view===view;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
   $('journalView').classList.toggle('hidden',view!=='journal');
   $('historyView').classList.toggle('hidden',view!=='history');
-  if(view==='history')renderHistory();else{renderList();renderEditor();}
+  if(view==='history'){renderHistory();mcRender();}else{renderList();renderEditor();}
 }
 function newEntry(){
   persist();const e=createEntry(app.strategy);app.entries.unshift(e);app.selectedId=e.id;
@@ -1045,7 +1045,7 @@ function updateDayLeadingChoice(t){const e=current();if(e?.strategy!=='day')retu
 }
 function renderEditor(openOverride){
   const el=$('editorPanel');const e=current();
-  if(!e){el.innerHTML='<div class="blank-editor"><div class="blank-icon">↗</div><h3>Start with a thesis.</h3><p class="muted">Create an analysis, collect evidence as you research, and come back to see how your thinking evolved.</p><button type="button" class="btn btn-primary" id="emptyNewButton">+ New analysis</button></div>';return;}
+  if(!e){el.innerHTML='<div class="blank-editor"><div class="blank-icon">↗</div><h3>Start with a thesis.</h3><p class="muted">Create an analysis, collect evidence as you research, and come back to see how your thinking evolved.</p><button type="button" class="btn btn-primary" id="emptyNewButton">+ New analysis</button></div>';mcRender();return;}
   const opened=openOverride ?? new Set([stageList(e)[0].key]);
   const m=metrics(e);
   const snapshots=[...e.snapshots].sort((a,b)=>b.at.localeCompare(a.at));
@@ -1076,6 +1076,7 @@ function renderEditor(openOverride){
   if(isTicker(e.ticker)&&e.ticker.trim()&&(!e.lastPriceAt||!Number.isFinite(Date.parse(e.lastPriceAt))||Date.now()-Date.parse(e.lastPriceAt)>300000)){
     setTimeout(()=>{if(current()?.id===e.id)loadQuote(e.ticker,e.id);},80);
   }
+  mcRender();
 }
 function captureOpen(){return new Set([...$('editorPanel').querySelectorAll('details[data-stage][open]')].map(x=>x.dataset.stage));}
 function rerenderEditor(){const open=captureOpen(),legacy=$('hznOldResearch')?.open;renderEditor(open);if(legacy&&$('hznOldResearch'))$('hznOldResearch').open=true;}
@@ -1098,7 +1099,7 @@ function showSnapshot(id){
   const e=current(),s=e?.snapshots.find(x=>x.id===id);if(!s)return;app.snapshotId=id;
   const x=s.data;
   $('snapshotModalTitle').textContent=`${x.ticker?.toUpperCase()||'Untitled'} · ${dateLabel(s.at)}`;
-  $('snapshotContent').innerHTML=`<div class="snapshot-section"><h4>Decision &amp; thesis</h4><p>Status: ${esc(x.status)} · Decision: ${esc(x.decision)}</p><p>${esc(x.thesis||'No thesis recorded')}</p><p>Invalidation: ${esc(x.invalidationReason||'Not recorded')}</p></div>${x.horizonConfluence?`<div class="snapshot-section"><h4>${x.strategy==='swings'?'SWING':'LEAPS'} CONFLUENCE · CALL ${hznScore(x).call}/100 · PUT ${hznScore(x).put}/100</h4><p>Research focus: ${esc(x.horizonConfluence.bias||'Not chosen')}</p>${HZN_DEFS[x.strategy].map(g=>{const v=x.horizonConfluence.sections[g.key];return `<p><strong>${esc(g.name)} (${g.weight}%)</strong> · CALL: ${v.call.filter(Boolean).length}/${g.call.length}, PUT: ${v.put.filter(Boolean).length}/${g.put.length}<br>CALL supporting evidence: ${esc(g.call.filter((_,i)=>v.call[i]).map(x=>x[0]).join('; ')||'None recorded')}<br>PUT supporting evidence: ${esc(g.put.filter((_,i)=>v.put[i]).map(x=>x[0]).join('; ')||'None recorded')}<br>Notes: ${esc(v.notes||'No additional notes')}<br>Source: ${esc(v.source||'Not recorded')}</p>`;}).join('')}</div>`:''}${x.strategy==='day'&&x.dayLeading?`<div class="snapshot-section"><h4>Seven leading indicators · ${x.dayLeading.bias?x.dayLeading.bias.toUpperCase():'No bias'}</h4><p>${DAY_LEADING_SIGNALS.map(d=>{const a=x.dayLeading.signals[d.key];return `${d.name}: ${a.reviewed?'Reviewed':'Not reviewed'} · ${a.stance||'No assessment'} · ${a.notes||'No notes'}`;}).map(esc).join('<br>')}</p><p>RVOL: ${esc(dayRvol(x.dayLeading)?.toFixed(2)||'not entered')}× · Daily ATR used: ${esc(dayAtrUse(x.dayLeading)?.toFixed(1)||'not entered')}%</p><p>Trade thesis: ${esc(x.dayLeading.inputs.thesis||'Not recorded')}</p></div>`:''}${stageList(x).map(st=>{const v=x.stages[st.key];const observations=v.data.map(d=>`${d.metric}: ${d.value}${d.source?` (${d.source})`:''}`).join('\n');const snapshotScore=stageSignal(x,st.key);return `<div class="snapshot-section"><h4>${esc(st.name)} · ${esc(snapshotScore.rating||'Insufficient readings')} · ${v.checks.filter(Boolean).length}/${st.checks.length} checked</h4><p>${esc(v.notes||'No analysis notes')}</p><p>${v.markers.map((m,i)=>v.checks[i]?`${m.name}: ${m.readings.join(' → ')} (${m.direction})`:'').filter(Boolean).map(esc).join('<br>')||'No numeric evidence saved'}</p>${observations?`<p>Data points:\n${esc(observations)}</p>`:''}</div>`;}).join('')}<div class="snapshot-section"><h4>Trade / contract record</h4><p>Entry: ${esc(x.entryPrice||'—')} · Target: ${esc(x.targetPrice||'—')} · Invalidation: ${esc(x.stopPrice||'—')}</p><p>Exit: ${esc(x.exitPrice||'—')} · Capital: ${esc(x.capital||'—')} · Shares: ${esc(x.quantity||'—')}</p>${['leaps','day'].includes(x.strategy)?`<p>${esc(x.optionType)} · Strike ${esc(x.strike||'—')} · Expiration ${esc(x.expiration||'—')} · Entry premium ${esc(x.premium||'—')} · Exit premium ${esc(x.exitPremium||'—')}</p>${x.strategy==='day'?`<p>Target premium ${esc(x.targetPremium||'—')} · Stop premium ${esc(x.stopPremium||'—')} · Delta ${esc(x.delta||'—')} · Gamma ${esc(x.gamma||'—')} · Theta ${esc(x.theta||'—')} · Vega ${esc(x.vega||'—')} · IV ${esc(x.ivPercent||'—')}%</p>`:''}`:''}<p>Lessons: ${esc(x.lesson||'Not recorded')}</p></div>`;
+  $('snapshotContent').innerHTML=`<div class="snapshot-section"><h4>Decision &amp; thesis</h4><p>Status: ${esc(x.status)} · Decision: ${esc(x.decision)}</p><p>${esc(x.thesis||'No thesis recorded')}</p><p>Invalidation: ${esc(x.invalidationReason||'Not recorded')}</p></div>${x.horizonConfluence?`<div class="snapshot-section"><h4>${x.strategy==='swings'?'SWING':'LEAPS'} CONFLUENCE · CALL ${hznScore(x).call}/100 · PUT ${hznScore(x).put}/100</h4><p>Research focus: ${esc(x.horizonConfluence.bias||'Not chosen')}</p>${HZN_DEFS[x.strategy].map(g=>{const v=x.horizonConfluence.sections[g.key];return `<p><strong>${esc(g.name)} (${g.weight}%)</strong> · CALL: ${v.call.filter(Boolean).length}/${g.call.length}, PUT: ${v.put.filter(Boolean).length}/${g.put.length}<br>CALL supporting evidence: ${esc(g.call.filter((_,i)=>v.call[i]).map(x=>x[0]).join('; ')||'None recorded')}<br>PUT supporting evidence: ${esc(g.put.filter((_,i)=>v.put[i]).map(x=>x[0]).join('; ')||'None recorded')}<br>Notes: ${esc(v.notes||'No additional notes')}<br>Source: ${esc(v.source||'Not recorded')}</p>`;}).join('')}</div>`:''}${x.strategy==='day'&&x.dayLeading?`<div class="snapshot-section"><h4>Seven leading indicators · ${x.dayLeading.bias?x.dayLeading.bias.toUpperCase():'No bias'}</h4><p>${DAY_LEADING_SIGNALS.map(d=>{const a=x.dayLeading.signals[d.key];return `${d.name}: ${a.reviewed?'Reviewed':'Not reviewed'} · ${a.stance||'No assessment'} · ${a.notes||'No notes'}`;}).map(esc).join('<br>')}</p><p>RVOL: ${esc(dayRvol(x.dayLeading)?.toFixed(2)||'not entered')}× · Daily ATR used: ${esc(dayAtrUse(x.dayLeading)?.toFixed(1)||'not entered')}%</p><p>Trade thesis: ${esc(x.dayLeading.inputs.thesis||'Not recorded')}</p></div>`:''}${stageList(x).map(st=>{const v=x.stages[st.key];const observations=v.data.map(d=>`${d.metric}: ${d.value}${d.source?` (${d.source})`:''}`).join('\n');const snapshotScore=stageSignal(x,st.key);return `<div class="snapshot-section"><h4>${esc(st.name)} · ${esc(snapshotScore.rating||'Insufficient readings')} · ${v.checks.filter(Boolean).length}/${st.checks.length} checked</h4><p>${esc(v.notes||'No analysis notes')}</p><p>${v.markers.map((m,i)=>v.checks[i]?`${m.name}: ${m.readings.join(' → ')} (${m.direction})`:'').filter(Boolean).map(esc).join('<br>')||'No numeric evidence saved'}</p>${observations?`<p>Data points:\n${esc(observations)}</p>`:''}</div>`;}).join('')}${mcSnapshotMarkup(x)}<div class="snapshot-section"><h4>Trade / contract record</h4><p>Entry: ${esc(x.entryPrice||'—')} · Target: ${esc(x.targetPrice||'—')} · Invalidation: ${esc(x.stopPrice||'—')}</p><p>Exit: ${esc(x.exitPrice||'—')} · Capital: ${esc(x.capital||'—')} · Shares: ${esc(x.quantity||'—')}</p>${['leaps','day'].includes(x.strategy)?`<p>${esc(x.optionType)} · Strike ${esc(x.strike||'—')} · Expiration ${esc(x.expiration||'—')} · Entry premium ${esc(x.premium||'—')} · Exit premium ${esc(x.exitPremium||'—')}</p>${x.strategy==='day'?`<p>Target premium ${esc(x.targetPremium||'—')} · Stop premium ${esc(x.stopPremium||'—')} · Delta ${esc(x.delta||'—')} · Gamma ${esc(x.gamma||'—')} · Theta ${esc(x.theta||'—')} · Vega ${esc(x.vega||'—')} · IV ${esc(x.ivPercent||'—')}%</p>`:''}`:''}<p>Lessons: ${esc(x.lesson||'Not recorded')}</p></div>`;
   $('snapshotDialog').showModal();
 }
 function restoreSnapshot(){
@@ -1504,10 +1505,10 @@ const ULTIMATE_LIBRARY=[
  ['Macro / News','CPI / PCE / PPI','Employment','GDP / PMI','Federal Reserve','Rate expectations','Economic cycle','Geopolitical escalation','Geopolitical de-escalation','Political intervention','Corporate developments','Earnings / guidance','Priced-in expectations','Catalyst timestamp'],
  ['History / Timing','Market regime','Historical rebound frequency','Midterm seasonality','Holiday seasonality','Options expiration history','Time-of-day patterns','Overnight/pre-market developments','Comparable setup backtest','Post-catalyst follow-through']
 ];
-function utNew(){const stamp=isoNow();return {id:makeId(),ticker:'',company:'',instrumentType:'INDEX',lastPrice:null,lastPriceAt:'',currency:'USD',date:today(),timeframe:'5m / 15m / 1H',status:'Researching',decision:'Watch',entry:'',target1:'',target2:'',stop:'',thesis:'',risk:'',nextAction:'',groups:Object.fromEntries(ULTIMATE_GROUPS.map(g=>[g.key,{reviewed:false,call:g.items.map(()=>false),put:g.items.map(()=>false),notes:'',source:''}])),history:[],createdAt:stamp,updatedAt:stamp};}
+function utNew(){const stamp=isoNow();return {id:makeId(),ticker:'',company:'',instrumentType:'INDEX',lastPrice:null,lastPriceAt:'',currency:'USD',date:today(),timeframe:'5m / 15m / 1H',status:'Researching',decision:'Watch',entry:'',target1:'',target2:'',stop:'',thesis:'',risk:'',nextAction:'',marketCatalysts:MC_DEFAULT(),groups:Object.fromEntries(ULTIMATE_GROUPS.map(g=>[g.key,{reviewed:false,call:g.items.map(()=>false),put:g.items.map(()=>false),notes:'',source:''}])),history:[],createdAt:stamp,updatedAt:stamp};}
 function utNormalize(raw){if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('Invalid Ultimate Day Trade assessment');const e=utNew();
  for(const key of ['id','ticker','company','instrumentType','lastPriceAt','currency','date','timeframe','status','decision','entry','target1','target2','stop','thesis','risk','nextAction','createdAt','updatedAt'])if(typeof raw[key]==='string')e[key]=plain(raw[key],['thesis','risk','nextAction'].includes(key)?12000:2500);
- e.id=e.id||makeId();e.lastPrice=Number.isFinite(Number(raw.lastPrice))&&raw.lastPrice!==null&&Number(raw.lastPrice)>0?Number(raw.lastPrice):null;
+ e.id=e.id||makeId();e.marketCatalysts=mcNormalize(raw.marketCatalysts);e.lastPrice=Number.isFinite(Number(raw.lastPrice))&&raw.lastPrice!==null&&Number(raw.lastPrice)>0?Number(raw.lastPrice):null;
  for(const g of ULTIMATE_GROUPS){const s=raw.groups?.[g.key];if(!s)continue;const r=e.groups[g.key];r.reviewed=s.reviewed===true;r.call=g.items.map((_,i)=>s.call?.[i]===true);r.put=g.items.map((_,i)=>s.put?.[i]===true);r.notes=plain(s.notes,12000);r.source=plain(s.source,3000);}
  e.history=Array.isArray(raw.history)?raw.history.slice(0,300).map(h=>({id:plain(h?.id,128)||makeId(),at:validDate(h?.at)?h.at:isoNow(),snapshot:h?.snapshot&&typeof h.snapshot==='object'?h.snapshot:null,note:plain(h?.note,12000)})):[];
  if(!validDate(e.createdAt))e.createdAt=isoNow();if(!validDate(e.updatedAt))e.updatedAt=isoNow();return e;}
@@ -1532,10 +1533,10 @@ function utGuide(e){return `<div class="ut-guide"><header><h3>Indicator Guide �
 function utLibraryHTML(query=''){const q=query.trim().toLowerCase();let count=0;const items=ULTIMATE_LIBRARY.map(([group,...names],g)=>{const filtered=names.filter(n=>(group+' '+n).toLowerCase().includes(q));if(!filtered.length)return '';count+=filtered.length;const source=ULTIMATE_GROUPS[Math.min(g,ULTIMATE_GROUPS.length-1)].items[0].study;return `<div class="ut-library-group"><h4>${esc(group)} <span>${filtered.length}</span></h4><div>${filtered.map(n=>`<span>${esc(n)} <a href="${esc(source)}" target="_blank" rel="noopener noreferrer" title="Open an educational reference">↗</a></span>`).join('')}</div></div>`;}).join('');return `<p class="muted">${count} matching indicators · Research library (not automatically scored)</p>${items||'<p>No matches found.</p>'}`;}
 function utHistory(e){return `<div class="ut-history"><div class="ut-history-head"><h3>My Ultimate Day Trade history</h3><p>Previous assessments and timestamped snapshots remain in this browser and your Stream Moves backup.</p></div><div class="ut-record-list">${[...ut.entries].sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(x=>{const ca=utScore(x,'call'),pu=utScore(x,'put');return `<button type="button" data-ut-open="${esc(x.id)}" class="ut-record ${x.id===e.id?'selected':''}"><strong>${esc(x.ticker||'Untitled setup')} · ${esc(x.date||'')}</strong><span>CALL ${ca.value}/100 · PUT ${pu.value}/100 · ${esc(x.decision)}</span><small>Edited ${dateLabel(x.updatedAt)}</small></button>`;}).join('')}</div><h3>Saved snapshots for ${esc(e.ticker||'this setup')}</h3>${e.history.length?`<div class="ut-snapshot-list">${[...e.history].reverse().map(x=>`<div class="ut-snap"><div><strong>${dateLabel(x.at)}</strong><p>CALL ${utScore(utNormalize(x.snapshot),'call').value}/100 · PUT ${utScore(utNormalize(x.snapshot),'put').value}/100</p></div><button type="button" class="btn btn-secondary small-btn" data-ut-restore="${esc(x.id)}">Restore</button></div>`).join('')}</div>`:'<p class="muted">No snapshots yet. Use “Save dated snapshot” while you analyze a setup.</p>'}</div>`;}
 function utRender(){if(!ut.active)return;const root=$('ultimateContent');const e=utCurrent();$('utSavedCount').textContent=ut.entries.length;
- if(!e){root.innerHTML=`<div class="ut-empty"><h3>Ultimate Day Trade</h3><p>Start a new assessment to research early CALL and PUT opportunities using the weighted checklist.</p><button type="button" class="btn btn-primary" data-ut-new>+ New analysis</button></div>`;return;}
+ if(!e){root.innerHTML=`<div class="ut-empty"><h3>Ultimate Day Trade</h3><p>Start a new assessment to research early CALL and PUT opportunities using the weighted checklist.</p><button type="button" class="btn btn-primary" data-ut-new>+ New analysis</button></div>`;mcRender();return;}
  const price=e.lastPrice!==null?(['NDX','SPX','VIX','RUT'].includes(e.ticker.toUpperCase())?Number(e.lastPrice).toLocaleString(undefined,{maximumFractionDigits:2}):amountText(e.lastPrice,e.currency)):'Not loaded',time=e.lastPriceAt?dateLabel(e.lastPriceAt):'Quote not yet verified';
  root.innerHTML=`<div class="ut-topbar"><div class="ut-title"><p class="section-overline">STREAM MOVES · SIXTH WORKSPACE</p><h2>Ultimate Day Trade</h2><p>Look for evidence first, check CALL and PUT separately, then document tomorrow's plan.</p></div><div class="ut-top-actions"><button type="button" class="btn btn-primary" data-ut-new>+ New analysis</button><button type="button" class="btn btn-secondary" data-ut-delete>Delete this</button></div></div><div class="ut-ticker-row"><label class="ut-ticker-field"><span>Ticker or company</span><input type="search" id="utTicker" data-ut-field="ticker" value="${esc(e.ticker)}" placeholder="QQQ, NDX, ServiceNow…" autocomplete="off"></label><div id="utSuggestions" class="ut-suggestions hidden"></div><label class="ut-date-field">Trade date<input type="date" data-ut-field="date" value="${esc(e.date)}"></label><label class="ut-date-field">Timeframe<select data-ut-field="timeframe">${optionMarkup(['5m / 15m / 1H','1m / 5m','15m / 1H','4H / Daily','Other'],e.timeframe)}</select></label><div class="ut-quote"><strong>${esc(e.company||e.ticker||'Select a ticker')}</strong><b id="utQuoteValue">${esc(price)}</b><span id="utQuoteTime">${esc(time)}</span><button class="ut-small-link" type="button" data-ut-quote-refresh>Refresh price ↻</button></div></div><div class="ut-quickbar"><div class="ut-workspace-tabs">${[['checklist','☑ Checklist'],['guide','ⓘ Indicator Guide'],['weights','⚖ Scoring & Weights'],['history','▣ History']].map(([p,label])=>`<button type="button" data-ut-panel="${p}" class="${ut.panel===p?'on':''}">${label}</button>`).join('')}</div><span id="utSavedAt">Saved in this browser</span></div>${ut.panel==='checklist'?`<div class="ut-layout"><section class="ut-rows"><div class="ut-legend"><strong>☑ CONFLUENCE CHECKLIST</strong><span>Check only the signals you can point to in your research. ⓘ opens lessons and data links.</span></div>${ULTIMATE_GROUPS.map((g,i)=>utGroupRow(g,e,i)).join('')}</section>${utSidebar(e)}</div>`:ut.panel==='guide'?utGuide(e):ut.panel==='history'?utHistory(e):`<div class="ut-weights"><h3>How the directional scores work</h3><p>Each category has four CALL and four PUT conditions. Each checked supporting condition adds one-quarter of that category’s weight. Both sides are measured independently; negative GEX by itself is not direction.</p><table><thead><tr><th>Category</th><th>Max CALL</th><th>Max PUT</th><th>Each checked item</th></tr></thead><tbody>${ULTIMATE_GROUPS.map(g=>`<tr><td>${esc(g.name)}</td><td>${g.weight}</td><td>${g.weight}</td><td>${(g.weight/4).toFixed(2)}</td></tr>`).join('')}</tbody></table><h3>Research thresholds</h3><p><strong>75–100:</strong> Investigate the directional thesis before the next session; <strong>60–74:</strong> Watch developing evidence; <strong>below 60:</strong> Continue collecting data. These are weighted evidence scores, not predicted probabilities of profit.</p></div>`}`;
- const count=$('ultimateTabCount');if(count)count.textContent=ut.entries.length;}
+ const count=$('ultimateTabCount');if(count)count.textContent=ut.entries.length;mcRender();}
 function utRefreshScores(){const e=utCurrent();if(!e)return;for(const side of ['call','put']){const x=utScore(e,side);const n=$('ut'+side+'Score'),bar=$('ut'+side+'Bar'),verdict=$('ut'+side+'Verdict'),count=$('ut'+side+'Count');if(n)n.textContent=x.value+'/100';if(bar)bar.style.width=x.value+'%';if(verdict)verdict.textContent=utBadge(x.value);if(count)count.textContent=x.checked+' of 24 supporting conditions checked';}}
 let utSearchController=null,utQuoteController=null;
 function utShowSuggestions(items){const el=$('utSuggestions');if(!el)return;ut.lookups=items;if(!items.length){el.classList.add('hidden');el.innerHTML='';return;}el.classList.remove('hidden');el.innerHTML=items.map((x,i)=>`<button type="button" data-ut-suggest="${i}"><b>${esc(x.symbol)}</b><span>${esc(x.name)}</span></button>`).join('');}
@@ -1548,12 +1549,118 @@ function utEvents(){const root=$('ultimateView');$('ultimateNavButton').addEvent
  root.addEventListener('input',ev=>{const t=ev.target,e=utCurrent();if(!e)return;if(t.id==='utLibraryQuery'){ut.search=t.value;$('utLibraryList').innerHTML=utLibraryHTML(t.value);return;}if(t.hasAttribute('data-ut-group-note')){e.groups[t.dataset.utGroupNote].notes=t.value;utSave();return;}if(t.hasAttribute('data-ut-group-source')){e.groups[t.dataset.utGroupSource].source=t.value;utSave();return;}if(t.hasAttribute('data-ut-field')){const k=t.dataset.utField;e[k]=t.value;if(k==='ticker'){const next=t.value.toUpperCase();if(next!==e.ticker){e.lastPrice=null;e.lastPriceAt='';e.company='';const v=$('utQuoteValue'),st=$('utQuoteTime');if(v)v.textContent='Not loaded';if(st)st.textContent='Quote not yet verified';}e.ticker=next;const id=e.id;clearTimeout(ut.lookupTimer);clearTimeout(ut.quoteTimer);ut.lookupTimer=setTimeout(()=>utSearchTicker(t.value.trim(),id),280);if(isTicker(t.value.trim()))ut.quoteTimer=setTimeout(()=>utFetchQuote(e),1250);}utSave();}});
  root.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&ev.target.id==='utTicker')utShowSuggestions([]);});}
 
+/* ADD-ON: ECONOMIC DATA & BREAKING NEWS CATALYST RESEARCH (4 visible strategies).
+   Manual, source-linked observations per entry; no scraping, live alerts, or changes to existing score formulas. */
+const MC_ECON = [
+  {name:'Federal Reserve / Rates',report:['FOMC decision & Fed Chair press conference','Fed projections / dot plot','FOMC minutes','Fed speeches'],order:'Inflation + jobs + growth → rate expectations → FOMC',source:'https://www.federalreserve.gov/newsevents/calendar.htm'},
+  {name:'Inflation / Prices',report:['CPI / Core CPI','Core PCE','PPI','ISM Prices Paid','Inflation expectations surveys'],order:'ISM prices → CPI / PPI (either order) → PCE',source:'https://www.bls.gov/schedule/news_release/'},
+  {name:'Employment / Jobs',report:['NFP + unemployment + wages','Weekly initial jobless claims','JOLTS','ADP employment','ISM employment'],order:'Claims + ADP + ISM → NFP; JOLTS is separate/lagged',source:'https://www.bls.gov/schedule/news_release/'},
+  {name:'Consumer Spending',report:['Retail sales','Real PCE spending','Consumer confidence','Consumer sentiment'],order:'Confidence / sentiment → retail sales → PCE spending',source:'https://www.census.gov/retail/'},
+  {name:'Economic Growth',report:['GDP advance estimate','GDP second estimate','GDP third estimate'],order:'PMI + retail sales + production → GDP advance → revisions',source:'https://www.bea.gov/news/schedule'},
+  {name:'Business Activity',report:['ISM services PMI','ISM manufacturing PMI','Flash PMI','Industrial production','Factory orders'],order:'Flash PMI → ISM surveys → production / orders',source:'https://www.ismworld.org/supply-management-news-and-reports/reports/'},
+  {name:'Housing',report:['Housing starts / permits','New home sales','Existing home sales','Pending home sales','Home-price indexes','NAHB confidence'],order:'Mortgage applications + builder confidence → construction / sales / prices',source:'https://www.census.gov/construction/nrc/'},
+];
+const MC_NEWS = [
+  {name:'Federal Reserve News',detail:'Surprise policy decisions, emergency actions, Fed leadership changes',source:'https://www.federalreserve.gov/newsevents/pressreleases.htm'},
+  {name:'Government & Regulatory News',detail:'SEC investigations, enforcement, antitrust cases, new regulations',source:'https://www.sec.gov/newsroom/press-releases'},
+  {name:'Geopolitical News',detail:'Wars, military strikes, sanctions, international crises',source:'https://www.reuters.com/world/'},
+  {name:'Trade & Tariff News',detail:'Tariffs, export controls, sanctions, trade agreements',source:'https://www.trade.gov/'},
+  {name:'Corporate Earnings & Guidance',detail:'Surprise earnings, revised guidance, profit warnings',source:'https://www.sec.gov/edgar/search/'},
+  {name:'Major Company Announcements',detail:'Mergers, CEO transitions, bankruptcies, major deals',source:'https://www.sec.gov/edgar/search/'},
+  {name:'Technology & AI News',detail:'AI breakthroughs, chip restrictions, cyber incidents',source:'https://www.reuters.com/technology/'},
+  {name:'Banking & Financial-System News',detail:'Bank failures, liquidity stress, credit events',source:'https://www.fdic.gov/news/press-releases'},
+  {name:'Energy & Commodity News',detail:'Oil supply disruptions, OPEC, energy shortages',source:'https://www.eia.gov/todayinenergy/'},
+  {name:'Economic & Fiscal Policy News',detail:'Budget, shutdowns, taxes, major fiscal initiatives',source:'https://www.congress.gov/'},
+  {name:'Natural Disasters & Public Health News',detail:'Disasters, disease outbreaks, infrastructure disruption',source:'https://www.fema.gov/press-releases'},
+  {name:'Market Structure & Institutional News',detail:'Trading halts, exchange disruption, forced liquidations',source:'https://www.nasdaqtrader.com/Trader.aspx?id=TradeHalts'},
+];
+const MC_FOCUS = {
+  ultimate: {label:'ULTIMATE DAY TRADE · 0–1 DTE',info:'Prioritize breaking headlines, the precise release time, expectations vs. actual, and the immediate price/volume response. One credible catalyst can change a day-trade thesis.'},
+  swings: {label:'SWINGS · DAYS TO WEEKS',info:'Follow several releases, company headlines and sector catalysts. Record whether the news supports continuation or reverses your 4H/daily structure.'},
+  leaps: {label:'LEAPS · MONTHS TO YEARS',info:'Build a dated chain of evidence across earnings, regulation, rates and the business cycle. Look for repeated confirmation or deterioration over time.'},
+  'long-term': {label:'LONG TERM · YEARS+',info:'Focus on durable policy changes, economic cycles, business performance and risks rather than reacting to every single headline.'}
+};
+function MC_DEFAULT(){return {records:[]};}
+function mcNormalize(raw){
+  const rows=Array.isArray(raw?.records)?raw.records:[];
+  return {records:rows.slice(0,500).filter(x=>x&&typeof x==='object').map(x=>({
+    id:plain(x.id,128)||makeId(),at:validDate(x.at)?x.at:isoNow(),
+    key:plain(x.key,32),title:plain(x.title,220),direction:['call','put','neutral'].includes(x.direction)?x.direction:'neutral',
+    reaction:['confirms','disconfirms','surprises','in-line','pending'].includes(x.reaction)?x.reaction:'pending',
+    expected:plain(x.expected,1000),actual:plain(x.actual,2000),notes:plain(x.notes,6000),source:safeUrl(plain(x.source,2500))||''
+  }))};
+}
+const mcState={journalOpen:false,ultimateOpen:false,rankingOpen:{econ:true,news:true},editKey:'econ:1:0'};
+const mcKey=(type,i,j=0)=>`${type}:${i}:${j}`;
+const mcChoices=()=>[
+  ...MC_ECON.flatMap((c,i)=>c.report.map((p,j)=>({key:mcKey('econ',i,j),label:`Economic · #${i+1} ${c.name}: ${p}`}))),
+  ...MC_NEWS.map((c,i)=>({key:mcKey('news',i,0),label:`Breaking news · #${i+1} ${c.name}`}))
+];
+function mcChoice(key){return mcChoices().find(x=>x.key===key)||mcChoices()[0];}
+function mcNowLocal(){const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);}
+function mcRow(e,kind){
+  if(kind==='ultimate')return e?.marketCatalysts?.records||[];
+  return e?.marketCatalysts?.records||[];
+}
+function mcRankings(type){
+  if(type==='econ')return MC_ECON.map((r,i)=>`<details class="mc-rank-item" ${i<3?'open':''}><summary><span class="mc-rank-num">${i+1}</span><strong>${esc(r.name)}</strong><small>${r.report.length} releases</small></summary><div class="mc-ranking-detail"><ol>${r.report.map((n,j)=>`<li><span>${esc(n)}</span><button type="button" data-mc-pick="${mcKey('econ',i,j)}" title="Record this catalyst">+ Use</button></li>`).join('')}</ol><p class="mc-watch"><b>Watch sequence:</b> ${esc(r.order)}</p><a target="_blank" rel="noopener noreferrer" href="${esc(r.source)}">Research official releases ↗</a></div></details>`).join('');
+  return MC_NEWS.map((r,i)=>`<div class="mc-news-item"><span class="mc-rank-num">${i+1}</span><div><strong>${esc(r.name)}</strong><p>${esc(r.detail)}</p><a href="${esc(r.source)}" target="_blank" rel="noopener noreferrer">Source ↗</a></div><button type="button" data-mc-pick="${mcKey('news',i)}" title="Record this news category">+ Use</button></div>`).join('');
+}
+function mcTimeline(events){
+  const counts={call:0,put:0,neutral:0};for(const r of events)counts[r.direction]=(counts[r.direction]||0)+1;
+  return `<div class="mc-ledger-heading"><div><strong>Saved catalyst evidence</strong><small>${events.length} dated ${events.length===1?'entry':'entries'} · <b class="mc-call-text">${counts.call} CALL</b> · <b class="mc-put-text">${counts.put} PUT</b> · ${counts.neutral} neutral</small></div><span>Manual research log</span></div>${events.length?`<div class="mc-log">${events.map(r=>`<article class="mc-log-entry"><div class="mc-log-top"><span class="mc-direction ${r.direction}">${r.direction==='call'?'↗ CALL':r.direction==='put'?'↘ PUT':'↔ NEUTRAL'}</span><strong>${esc(r.title)}</strong><button type="button" data-mc-remove="${esc(r.id)}" aria-label="Remove recorded catalyst">×</button></div><p class="mc-log-meta">${dateLabel(r.at)} · ${esc(({confirms:'Confirmed expectations',disconfirms:'Disconfirmed expectations',surprises:'Surprise', 'in-line':'In line / priced in',pending:'Awaiting report'})[r.reaction]||r.reaction)}</p>${r.expected?`<p><b>Expected:</b> ${esc(r.expected)}</p>`:''}${r.actual?`<p><b>Actual / news:</b> ${esc(r.actual)}</p>`:''}${r.notes?`<p><b>Thesis impact:</b> ${esc(r.notes)}</p>`:''}${r.source?`<a href="${esc(r.source)}" target="_blank" rel="noopener noreferrer">Open saved evidence ↗</a>`:'<small class="mc-unverified">No source URL saved — verify before scoring evidence.</small>'}</article>`).join('')}</div>`:'<p class="mc-empty-log">No catalysts recorded. Use the ranked lists above to add an economic release or breaking headline to this analysis.</p>'}`;
+}
+function mcMarkup(e,strategy){
+ const f=MC_FOCUS[strategy]||MC_FOCUS.swings,kind=strategy==='ultimate'?'ultimate':'journal';const entries=mcRow(e,kind);const panelOpen=mcState[kind+'Open'];
+ return `<details class="mc-panel" ${panelOpen?'open':''} data-mc-panel="${kind}"><summary class="mc-header"><span class="mc-icon">◈</span><span class="mc-header-main"><small>NEW · MARKET INTELLIGENCE FOR YOUR THESIS</small><strong>Economic Data &amp; Breaking News</strong><em>${esc(f.label)} · ${entries.length} saved catalysts</em></span><span class="mc-toggle-hint">Expand / collapse ▾</span></summary><div class="mc-body">
+ <div class="mc-focus"><strong>WHAT MATTERS FOR THIS STRATEGY</strong><p>${esc(f.info)}</p></div>
+ <div class="mc-cols"><section class="mc-ranking-card"><div class="mc-card-head"><h3>▤ Economic data rankings</h3><span>1 = highest typical impact</span></div><p class="mc-card-sub">Within each category, the releases are also ranked by typical market impact. Expand to see the watch order.</p><div class="mc-rank-list">${mcRankings('econ')}</div></section><section class="mc-ranking-card"><div class="mc-card-head"><h3>⚡ Breaking news rankings</h3><span>1 = highest typical impact</span></div><p class="mc-card-sub">A single major story can override the usual ranking. Verify the time and affected company or sector.</p><div class="mc-news-list">${mcRankings('news')}</div></section></div>
+ <div class="mc-record"><div class="mc-card-head"><h3>⊕ Add catalyst to this thesis</h3><span>Saved to this analysis + backups</span></div><p class="mc-card-sub">Log earlier expectations, the actual release/headline, and whether it confirmed or challenged your CALL/PUT thesis.</p><form class="mc-form" data-mc-form><label class="mc-wide">Economic release / news type<select name="key" required>${mcChoices().map(x=>`<option value="${esc(x.key)}" ${x.key===mcState.editKey?'selected':''}>${esc(x.label)}</option>`).join('')}</select></label>
+ <label>Release / headline time<input type="datetime-local" name="when" value="${mcNowLocal()}"></label><label>Thesis direction<select name="direction"><option value="neutral">Neutral / unclear</option><option value="call">↗ Supports CALL / upside</option><option value="put">↘ Supports PUT / downside</option></select></label>
+ <label>Expected market outcome<input name="expected" maxlength="1000" placeholder="e.g. core CPI 0.3%; no policy change"></label><label>Actual result / breaking headline<input name="actual" maxlength="2000" placeholder="What was reported and when?"></label>
+ <label>Result vs expectations<select name="reaction"><option value="pending">Pending / developing</option><option value="confirms">Confirms</option><option value="disconfirms">Disconfirms</option><option value="surprises">Surprise vs consensus</option><option value="in-line">In line / priced in</option></select></label><label>Evidence URL<input name="source" inputmode="url" type="url" maxlength="2500" placeholder="https://official-source-or-news.com"></label>
+ <label class="mc-wide">How does this affect my thesis?<textarea name="notes" maxlength="6000" rows="2" placeholder="Record the impact, price reaction, what would invalidate it, and follow-up news."></textarea></label><div class="mc-form-bottom"><span>Manual evidence only. No automatic news feed or change to existing confluence scores.</span><button type="submit" class="btn btn-primary">+ Add dated catalyst</button></div></form></div>
+ <section class="mc-ledger">${mcTimeline(entries)}</section>
+ <div class="mc-small-print">Impact rankings are a research priority guide, not guaranteed volatility rankings. Release calendars and actual ordering can change. Check the report's reference month and compare the actual reading with consensus, revisions, and pre-release pricing. News does not automatically confirm market direction.</div></div></details>`;
+}
+function mcActiveEntry(kind){return kind==='ultimate'?utCurrent():current();}
+function mcRender(){
+ const ultimate=ut.active,visibleJournal=!ultimate&&!cf.active&&app.view==='journal';
+ const j=$('marketCatalystsJournal'),u=$('marketCatalystsUltimate');if(!j||!u)return;
+ j.classList.toggle('hidden',!visibleJournal||!current());u.classList.toggle('hidden',!ultimate||!utCurrent());
+ if(visibleJournal&&current()){const was=j.querySelector('.mc-panel');if(was)mcState.journalOpen=was.open;j.innerHTML=mcMarkup(current(),app.strategy);}
+ if(ultimate&&utCurrent()){const was=u.querySelector('.mc-panel');if(was)mcState.ultimateOpen=was.open;u.innerHTML=mcMarkup(utCurrent(),'ultimate');}
+}
+function mcSave(kind){const e=mcActiveEntry(kind);if(!e)return;e.updatedAt=isoNow();persist();if(kind==='ultimate'){const st=$('utSavedAt');if(st)st.textContent='Saved in this browser · '+new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});}else{setSaveText('Saved in this browser');renderList();}}
+function mcInit(){
+ for(const id of ['marketCatalystsJournal','marketCatalystsUltimate']){
+  const host=$(id);const kind=id==='marketCatalystsUltimate'?'ultimate':'journal';
+  host.addEventListener('toggle',ev=>{if(ev.target.matches('.mc-panel'))mcState[kind+'Open']=ev.target.open;},true);
+  host.addEventListener('click',ev=>{
+    const pick=ev.target.closest('[data-mc-pick]');if(pick){mcState.editKey=pick.dataset.mcPick;const sel=host.querySelector('[data-mc-form] [name="key"]');if(sel){sel.value=mcState.editKey;sel.closest('.mc-record')?.scrollIntoView({behavior:'smooth',block:'nearest'});sel.focus();}return;}
+    const remove=ev.target.closest('[data-mc-remove]');if(remove){const e=mcActiveEntry(kind);if(!e)return;const row=e.marketCatalysts?.records.find(x=>x.id===remove.dataset.mcRemove);if(!row)return;if(!confirm(`Remove the saved catalyst “${row.title}” from this analysis?`))return;e.marketCatalysts.records=e.marketCatalysts.records.filter(x=>x.id!==row.id);mcSave(kind);mcRender();showToast('Catalyst removed from this analysis.');}
+  });
+  host.addEventListener('submit',ev=>{
+   const form=ev.target.closest('[data-mc-form]');if(!form)return;ev.preventDefault();const e=mcActiveEntry(kind);if(!e)return;
+   const f=new FormData(form),key=String(f.get('key')||''),chosen=mcChoice(key);
+   const expected=plain(f.get('expected'),1000),actual=plain(f.get('actual'),2000),notes=plain(f.get('notes'),6000),link=plain(f.get('source'),2500).trim();
+   if(!expected.trim()&&!actual.trim()&&!notes.trim()){form.elements.actual.focus();showToast('Add the release, headline, expectation or thesis impact first.',true);return;}
+   if(link&&!safeUrl(link)){form.elements.source.focus();showToast('Enter a valid http(s) source URL or leave it blank.',true);return;}
+   const when=String(f.get('when')||''),dt=when?new Date(when):new Date(),at=Number.isFinite(dt.getTime())?dt.toISOString():isoNow();
+   e.marketCatalysts=e.marketCatalysts||MC_DEFAULT();e.marketCatalysts.records.unshift({id:makeId(),at,key:chosen.key,title:chosen.label,direction:String(f.get('direction')||'neutral'),reaction:String(f.get('reaction')||'pending'),expected,actual,notes,source:link?safeUrl(link):''});
+   mcSave(kind);mcRender();showToast('Dated catalyst added to this thesis and backup.');
+  });
+ }
+}
+function mcSnapshotMarkup(e){const rows=e.marketCatalysts?.records||[];return `<div class="snapshot-section"><h4>Economic data &amp; breaking news · ${rows.length} recorded catalysts</h4>${rows.length?rows.map(r=>`<p><b>${dateLabel(r.at)} · ${esc(r.direction.toUpperCase())}</b> · ${esc(r.title)} · ${esc(r.reaction)}<br>Expected: ${esc(r.expected||'—')}<br>Actual: ${esc(r.actual||'—')}<br>Thesis impact: ${esc(r.notes||'—')}${r.source?`<br>Source: ${esc(r.source)}`:''}</p>`).join(''):'<p>No catalysts recorded in this version.</p>'}</div>`;}
+
 // Dedicated deep link for the sixth page, plus reliable navigation back to existing pages.
 // Preserve the initial route before the normal Day Trading boot sequence runs.
 const openUltimateOnBoot = window.location.hash === '#ultimate';
 setupEvents();
 setupConfluenceEvents();
 utEvents();
+mcInit();
 setStrategy('swings');
 setView('journal');
 // Open the first visible tab by default; old journal data remains untouched.
@@ -1570,3 +1677,4 @@ document.querySelectorAll('[data-strategy], #confluenceNavButton').forEach(butto
     }
   });
 });
+

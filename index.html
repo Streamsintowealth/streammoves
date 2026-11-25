@@ -7,8 +7,8 @@
   <meta name="description" content="Stream Moves — a private, browser-based investment research and decision journal." />
   <title>Stream Moves | Investment Checklist Journal</title>
   <link rel="icon" type="image/png" href="streammoves-official-s-logo.png" />
-  <link rel="stylesheet" href="styles.css?v=swings-leaps-20261124-v1" />
-  <script src="app.js?v=swings-leaps-20261124-v1" defer></script>
+  <link rel="stylesheet" href="styles.css?v=economic-news-20261125-v1" />
+  <script src="app.js?v=economic-news-20261125-v1" defer></script>
   <style>
     /* Navigation-only adjustment: four visible strategies, two per row on phones. */
     #strategyTabs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -96,6 +96,8 @@
         <div class="save-status" id="saveStatus" aria-live="polite"><span class="status-indicator"></span> Saved in this browser</div>
       </div>
 
+      <div id="marketCatalystsJournal" class="mc-host hidden" aria-label="Economic data and breaking news thesis evidence"></div>
+
       <div class="journal-layout" id="journalView">
         <aside class="entry-sidebar" aria-label="Saved investment analyses">
           <div class="sidebar-title"><div><h3>My research</h3><p id="sidebarCount" class="muted small">0 analyses</p></div><button class="icon-button" id="sidebarAdd" type="button" title="Start another analysis" aria-label="Start new analysis">+</button></div>
@@ -137,6 +139,7 @@
         </div>
       </section>
       <section id="ultimateView" class="ultimate-page hidden" aria-label="Ultimate Day Trade weighted CALL and PUT confluence journal">
+        <div id="marketCatalystsUltimate" class="mc-host hidden" aria-label="Ultimate day trade economic and news catalyst research"></div>
         <div id="ultimateContent"></div>
         <span class="visually-hidden" id="utSavedCount">0</span>
       </section>
